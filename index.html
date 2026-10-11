@@ -34,6 +34,52 @@
 html,body{font-family:'Tajawal',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
 body{padding-bottom:env(safe-area-inset-bottom)}
 
+/* Salawat banner */
+.salawat-banner{
+  background:linear-gradient(135deg,#d4af37 0%,#f4e4a1 50%,#d4af37 100%);
+  color:#4a3a0a;
+  padding:10px 16px;
+  text-align:center;
+  font-size:14px;
+  font-weight:700;
+  letter-spacing:.3px;
+  box-shadow:0 2px 8px rgba(212,175,55,.2);
+  position:sticky;top:0;z-index:110;
+  border-bottom:1px solid #b89628;
+  font-family:'Tajawal',sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .salawat-banner{
+    background:linear-gradient(135deg,#8b7020 0%,#c9a540 50%,#8b7020 100%);
+    color:#2a1f05;border-bottom-color:#4a3810;
+  }
+}
+
+/* Salawat toast - special style for salawat confirmations */
+.salawat-toast{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(0.8);
+  background:linear-gradient(135deg,#d4af37 0%,#f4e4a1 50%,#d4af37 100%);
+  color:#4a3a0a;
+  padding:20px 28px;border-radius:16px;
+  font-weight:700;font-size:17px;line-height:1.6;
+  z-index:400;opacity:0;pointer-events:none;
+  transition:all .4s cubic-bezier(.34,1.56,.64,1);
+  box-shadow:0 10px 40px rgba(0,0,0,.3),0 0 0 1px rgba(212,175,55,.4);
+  text-align:center;max-width:85vw;
+  border:2px solid #b89628;
+}
+.salawat-toast.show{
+  opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto;
+}
+.salawat-toast .emoji{font-size:28px;display:block;margin-bottom:8px}
+.salawat-toast .text{font-size:17px;line-height:1.7;color:#2a1f05;font-weight:700}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .salawat-toast{
+    background:linear-gradient(135deg,#c9a540 0%,#f4e4a1 50%,#c9a540 100%);
+    color:#2a1f05;
+  }
+}
+
 .header{background:linear-gradient(135deg,#1b4332 0%,#2d6a4f 100%);color:#fff;padding:16px 20px 20px;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,.08)}
 .header-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
 .header h1{font-size:20px;font-weight:700}
@@ -101,6 +147,27 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 .kafeel-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
 .month-select-inline{padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-family:inherit;font-size:12px;color:var(--text);flex:1;min-width:120px;cursor:pointer}
 
+/* Comment UI */
+.comment-section{margin-top:10px;padding:10px;background:var(--surface);border-radius:8px;border:1px dashed var(--warn)}
+.comment-section.has-comment{background:#fff8e1;border-style:solid;border-color:var(--warn)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .comment-section.has-comment{background:#2d2416}}
+.comment-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.btn-comment{padding:7px 12px;background:transparent;border:1px solid var(--warn);color:var(--warn);border-radius:8px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px}
+.btn-comment.has-comment{background:var(--warn);color:#fff}
+.comment-display{flex:1;font-size:12px;color:var(--text-dim);line-height:1.5;padding:4px 0;font-style:italic}
+.comment-display strong{color:var(--warn);font-style:normal;margin-left:4px}
+.comment-badge{display:inline-flex;align-items:center;gap:4px;background:var(--warn);color:#fff;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;margin-right:6px}
+
+/* Comment modal */
+.comment-modal-body{padding:4px}
+.comment-presets{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.comment-preset{padding:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;font-family:inherit;font-size:14px;color:var(--text);text-align:right;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:10px}
+.comment-preset:hover,.comment-preset.selected{background:var(--chip-bg);border-color:var(--accent-2)}
+.comment-preset .icon{font-size:18px}
+.comment-textarea{width:100%;min-height:80px;padding:12px;border:1px solid var(--border);border-radius:10px;font-family:inherit;font-size:14px;color:var(--text);background:var(--surface-2);resize:vertical;line-height:1.6}
+.comment-textarea:focus{outline:none;border-color:var(--accent-2)}
+.comment-subject{font-size:13px;color:var(--text-dim);background:var(--surface-2);padding:10px 12px;border-radius:8px;margin-bottom:14px;border-right:3px solid var(--accent-2)}
+
 .note-banner{background:linear-gradient(135deg,var(--sadaqat-bg) 0%,#fce4a4 100%);padding:14px 16px;margin:12px 16px 12px;border-radius:12px;font-size:12px;color:var(--sadaqat-text);line-height:1.6;border:1px solid var(--sadaqat)}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .note-banner{background:var(--sadaqat-bg)}}
 .note-banner strong{display:block;margin-bottom:4px;font-weight:700}
@@ -147,6 +214,10 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 <div class="loading" id="loading">
   <div class="spinner"></div>
   <div class="loading-text">جاري الاتصال بالسحابة... 🌿</div>
+</div>
+
+<div class="salawat-banner">
+  اللهم صلِّ وسلم على سيدنا محمد وآله ﷺ
 </div>
 
 <div class="header">
@@ -205,6 +276,11 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 
 <div class="toast" id="toast"></div>
 
+<div class="salawat-toast" id="salawatToast">
+  <span class="emoji">🌿</span>
+  <div class="text">اللهم صلِّ وسلم على سيدنا محمد وآله ﷺ</div>
+</div>
+
 <div class="modal" id="confirmModal">
   <div class="modal-content">
     <div class="modal-handle"></div>
@@ -213,6 +289,25 @@ body{padding-bottom:env(safe-area-inset-bottom)}
     <div class="modal-actions">
       <button class="modal-btn modal-btn-secondary" onclick="closeConfirm()">إلغاء</button>
       <button class="modal-btn modal-btn-primary" onclick="proceedConfirm()">نعم، أؤكد ✓</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="commentModal">
+  <div class="modal-content">
+    <div class="modal-handle"></div>
+    <div class="modal-title">💬 إضافة ملاحظة</div>
+    <div class="comment-modal-body">
+      <div class="comment-subject" id="commentSubject">...</div>
+      <div style="font-size:13px;color:var(--text-dim);margin-bottom:10px;font-weight:500">اختاري ملاحظة سريعة:</div>
+      <div class="comment-presets" id="commentPresets"></div>
+      <div style="font-size:13px;color:var(--text-dim);margin-bottom:8px;font-weight:500">أو اكتبي ملاحظتكِ:</div>
+      <textarea class="comment-textarea" id="commentTextarea" placeholder="اكتبي ملاحظة مخصصة هنا..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-secondary" onclick="closeCommentModal()">إلغاء</button>
+      <button class="modal-btn" style="background:var(--danger-bg);color:var(--danger)" onclick="deleteComment()" id="deleteCommentBtn" style="display:none">حذف الملاحظة</button>
+      <button class="modal-btn modal-btn-primary" onclick="saveComment()">حفظ ✓</button>
     </div>
   </div>
 </div>
@@ -313,6 +408,20 @@ window.EMBEDDED_DATA = [{"pt": "ولاء وفيق", "sep": 10000.0, "oct": 10000
 const MONTH_NAMES_AR = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
 const SEP_VAL = 2026*12 + 9;
 const OCT_VAL = 2026*12 + 10;
+
+const COMMENT_PRESETS = [
+  { icon: '🔍', text: 'محتاج أتأكد من المبلغ' },
+  { icon: '⚠️', text: 'المبلغ مش مظبوط - يحتاج مراجعة' },
+  { icon: '💬', text: 'يُناقَش مع يوسف' },
+  { icon: '⏳', text: 'الكفيل لسه ما ردّش' },
+  { icon: '📞', text: 'محتاج أكلّمه تاني' },
+  { icon: '🤔', text: 'مش متأكدة من الحالة' },
+  { icon: '💰', text: 'دفع جزء بس من المبلغ' },
+  { icon: '📅', text: 'وعد يدفع الأسبوع الجاي' },
+  { icon: '❓', text: 'في مشكلة - محتاج توضيح' },
+];
+
+let commentContext = null; // {ptName, kafeelName?, sadaqat?}
 
 let DATA = [];
 let currentMonth = 'sep';
@@ -466,6 +575,7 @@ function updatePtState(ptName, updates) {
   Object.assign(state[ptName], updates);
   saveState();
   render();
+  showSalawat();
 }
 
 function updateKafeelState(ptName, kafeelName, updates) {
@@ -475,12 +585,107 @@ function updateKafeelState(ptName, kafeelName, updates) {
   Object.assign(state[ptName].kafeels[kafeelName], updates);
   saveState();
   render();
+  showSalawat();
 }
 
 function getKafeelState(ptName, kafeelName) {
   const s = getPtState(ptName);
   return (s.kafeels && s.kafeels[kafeelName]) || {};
 }
+
+function getComment(ptName, kafeelName, isSadaqat) {
+  const s = getPtState(ptName);
+  if (isSadaqat) return (s.sadaqat && s.sadaqat.comment) || '';
+  if (kafeelName) {
+    const ks = getKafeelState(ptName, kafeelName);
+    return ks.comment || '';
+  }
+  return s.comment || '';
+}
+
+function setComment(ptName, kafeelName, isSadaqat, text) {
+  if (isSadaqat) {
+    const s = getPtState(ptName);
+    const sdq = {...(s.sadaqat||{}), comment: text || null};
+    updatePtState(ptName, {sadaqat: sdq});
+  } else if (kafeelName) {
+    updateKafeelState(ptName, kafeelName, {comment: text || null});
+  } else {
+    updatePtState(ptName, {comment: text || null});
+  }
+}
+
+function openCommentModal(ptName, kafeelName, isSadaqat) {
+  if (!requireCloud()) return;
+  commentContext = { ptName, kafeelName, isSadaqat };
+
+  // Build subject label
+  let subject;
+  if (isSadaqat) subject = `${ptName} ← 🟡 الصدقات`;
+  else if (kafeelName) subject = `${ptName} ← ⬜ ${kafeelName}`;
+  else subject = `${ptName} (المجموعة كاملة)`;
+  document.getElementById('commentSubject').textContent = subject;
+
+  // Fill presets
+  const presetsEl = document.getElementById('commentPresets');
+  const currentComment = getComment(ptName, kafeelName, isSadaqat);
+  presetsEl.innerHTML = COMMENT_PRESETS.map((p, i) =>
+    `<button class="comment-preset ${currentComment===p.text?'selected':''}" data-preset-idx="${i}">
+      <span class="icon">${p.icon}</span>
+      <span>${escHtml(p.text)}</span>
+    </button>`
+  ).join('');
+
+  presetsEl.querySelectorAll('.comment-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.presetIdx);
+      document.getElementById('commentTextarea').value = COMMENT_PRESETS[idx].text;
+      presetsEl.querySelectorAll('.comment-preset').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    });
+  });
+
+  // Fill textarea
+  const ta = document.getElementById('commentTextarea');
+  ta.value = currentComment || '';
+
+  // Show delete button if comment exists
+  const delBtn = document.getElementById('deleteCommentBtn');
+  if (currentComment) {
+    delBtn.style.display = 'block';
+  } else {
+    delBtn.style.display = 'none';
+  }
+
+  document.getElementById('commentModal').classList.add('show');
+}
+
+function closeCommentModal() {
+  commentContext = null;
+  document.getElementById('commentModal').classList.remove('show');
+}
+
+function saveComment() {
+  if (!commentContext) return;
+  const text = document.getElementById('commentTextarea').value.trim();
+  const { ptName, kafeelName, isSadaqat } = commentContext;
+  setComment(ptName, kafeelName, isSadaqat, text);
+  toast(text ? '✓ تم حفظ الملاحظة' : '✓ تم حذف الملاحظة');
+  closeCommentModal();
+}
+
+function deleteComment() {
+  if (!commentContext) return;
+  const { ptName, kafeelName, isSadaqat } = commentContext;
+  setComment(ptName, kafeelName, isSadaqat, null);
+  toast('✓ تم حذف الملاحظة');
+  closeCommentModal();
+}
+
+window.openCommentModal = openCommentModal;
+window.closeCommentModal = closeCommentModal;
+window.saveComment = saveComment;
+window.deleteComment = deleteComment;
 
 // Parse month string like "مايو 2027" into comparable value
 function parseMonthValue(str) {
@@ -630,6 +835,14 @@ function makeCard(pt, status, amt) {
           ${monthOptions(s.paid_until)}
         </select>
       </div>
+      <div class="comment-section ${s.comment?'has-comment':''}" style="margin-bottom:12px">
+        <div class="comment-row">
+          <button class="btn-comment ${s.comment?'has-comment':''}" data-comment-pt="1">
+            💬 ${s.comment?'تعديل ملاحظة المجموعة':'إضافة ملاحظة للمجموعة كلها'}
+          </button>
+          ${s.comment?`<div class="comment-display"><strong>ملاحظة عامة:</strong> ${escHtml(s.comment)}</div>`:''}
+        </div>
+      </div>
       ${pt.sadaqat>0 ? renderSadaqat(pt) : ''}
       <div class="kafeel-list">
         ${pt.kafeels.map(k => renderKafeel(pt, k)).join('')}
@@ -729,13 +942,34 @@ function makeCard(pt, status, amt) {
       if (!requireCloud()) { sel.value = origValue; return; }
       const kName = decodeURIComponent(sel.dataset.kUntil);
       const newVal = sel.value;
-      const msg = newVal 
+      const msg = newVal
         ? `هل تؤكدين أن "${kName}" مدفوع مقدماً حتى ${newVal}؟`
         : `إزالة تاريخ الدفع المسبق لـ "${kName}"؟`;
       confirmAction(msg, () => {
         updateKafeelState(pt.pt, kName, {paid_until: newVal || null});
         if (newVal) toast(`✓ ${kName} مدفوع حتى ${newVal}`);
       });
+    });
+  });
+
+  // Comment handlers
+  card.querySelectorAll('[data-comment-pt]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openCommentModal(pt.pt, null, false);
+    });
+  });
+  card.querySelectorAll('[data-comment-sadaqat]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openCommentModal(pt.pt, null, true);
+    });
+  });
+  card.querySelectorAll('[data-comment-kafeel]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const kName = decodeURIComponent(btn.dataset.commentKafeel);
+      openCommentModal(pt.pt, kName, false);
     });
   });
 
@@ -755,10 +989,11 @@ function renderSadaqat(pt) {
   }
   const cls = paidAhead ? 'paid-ahead' : 'sadaqat';
 
+  const sdqComment = sdq.comment || '';
   return `
     <div class="kafeel-item ${cls}">
       <div class="kafeel-name">
-        <span>🟡 صدقات ثابتة <span class="kafeel-amount">${fmt(pt.sadaqat)}</span>${paidAhead?' <span class="ahead-badge">مقدماً</span>':''}</span>
+        <span>🟡 صدقات ثابتة <span class="kafeel-amount">${fmt(pt.sadaqat)}</span>${paidAhead?' <span class="ahead-badge">مقدماً</span>':''}${sdqComment?' <span class="comment-badge">💬 ملاحظة</span>':''}</span>
         <button class="btn-pay btn-small ${paid?'btn-yes':'btn-no'}" data-sadaqat-mark="1">${paid?'✓ دُفع':'لم يُدفع'}</button>
       </div>
       <div class="kafeel-details">${escHtml(pt.sadaqat_note)}</div>
@@ -767,6 +1002,14 @@ function renderSadaqat(pt) {
         <select class="month-select-inline" data-sadaqat-until="1">
           ${monthOptions(sdq.paid_until)}
         </select>
+      </div>
+      <div class="comment-section ${sdqComment?'has-comment':''}">
+        <div class="comment-row">
+          <button class="btn-comment ${sdqComment?'has-comment':''}" data-comment-sadaqat="1">
+            💬 ${sdqComment?'تعديل الملاحظة':'إضافة ملاحظة'}
+          </button>
+          ${sdqComment?`<div class="comment-display"><strong>ملاحظة:</strong> ${escHtml(sdqComment)}</div>`:''}
+        </div>
       </div>
     </div>
   `;
@@ -795,10 +1038,11 @@ function renderKafeel(pt, k) {
   const btnLabel = paid || paidAhead ? '✓ دُفع' : 'لم يُدفع';
   const btnCls = paid || paidAhead ? 'btn-yes' : 'btn-no';
 
+  const kComment = ks.comment || '';
   return `
     <div class="kafeel-item ${itemCls}">
       <div class="kafeel-name">
-        <span>⬜ ${escHtml(k.name)} <span class="kafeel-amount">${fmt(amt)}</span>${paidAhead?' <span class="ahead-badge">مقدماً</span>':''}</span>
+        <span>⬜ ${escHtml(k.name)} <span class="kafeel-amount">${fmt(amt)}</span>${paidAhead?' <span class="ahead-badge">مقدماً</span>':''}${kComment?' <span class="comment-badge">💬 ملاحظة</span>':''}</span>
         <button class="btn-pay btn-small ${btnCls}" data-k-mark="${encodeURIComponent(k.name)}">${btnLabel}</button>
       </div>
       ${k.details ? `<div class="kafeel-details">${escHtml(k.details)}</div>` : ''}
@@ -808,6 +1052,14 @@ function renderKafeel(pt, k) {
         <select class="month-select-inline" data-k-until="${encodeURIComponent(k.name)}">
           ${monthOptions(ks.paid_until)}
         </select>
+      </div>
+      <div class="comment-section ${kComment?'has-comment':''}">
+        <div class="comment-row">
+          <button class="btn-comment ${kComment?'has-comment':''}" data-comment-kafeel="${encodeURIComponent(k.name)}">
+            💬 ${kComment?'تعديل الملاحظة':'إضافة ملاحظة'}
+          </button>
+          ${kComment?`<div class="comment-display"><strong>ملاحظة:</strong> ${escHtml(kComment)}</div>`:''}
+        </div>
       </div>
     </div>
   `;
@@ -866,12 +1118,36 @@ function toast(msg) {
   setTimeout(()=>t.classList.remove('show'), 2500);
 }
 
+let salawatTimer = null;
+function showSalawat() {
+  const el = document.getElementById('salawatToast');
+  el.classList.add('show');
+  if (salawatTimer) clearTimeout(salawatTimer);
+  salawatTimer = setTimeout(() => el.classList.remove('show'), 1800);
+}
+
 function showHelp() { document.getElementById('helpModal').classList.add('show'); }
 function closeHelp() { document.getElementById('helpModal').classList.remove('show'); }
 window.showHelp = showHelp;
 window.closeHelp = closeHelp;
 window.switchMonth = switchMonth;
 window.setFilter = setFilter;
+
+function collectComments() {
+  const items = [];
+  DATA.forEach(pt => {
+    const s = getPtState(pt.pt);
+    if (s.comment) items.push(`• ${pt.pt}: ${s.comment}`);
+    if (s.sadaqat && s.sadaqat.comment) items.push(`• ${pt.pt} ← الصدقات: ${s.sadaqat.comment}`);
+    if (s.kafeels) {
+      Object.keys(s.kafeels).forEach(kn => {
+        const c = s.kafeels[kn] && s.kafeels[kn].comment;
+        if (c) items.push(`• ${pt.pt} ← ${kn}: ${c}`);
+      });
+    }
+  });
+  return items;
+}
 
 function shareProgress() {
   let doneSep=0,doneOct=0,totSep=0,totOct=0,countSep=0,countOct=0;
@@ -894,6 +1170,8 @@ function shareProgress() {
   const collected = currentMonth==='sep' ? doneSep : doneOct;
   const count = currentMonth==='sep' ? countSep : countOct;
 
+  const comments = collectComments();
+
   const text = `📊 ملخص تحصيل ${monthLabel} ٢٠٢٦
 
 ✅ محصّل: ${fmt(collected)} جنيه
@@ -901,6 +1179,7 @@ function shareProgress() {
 📦 المجموعات: ${count} / ${DATA.length}
 
 ${pending.length>0 ? '🔸 المتبقي:\n' + pending.slice(0,15).join('\n') + (pending.length>15?`\n... و${pending.length-15} أخرى`:'') : '🎉 كل التحصيل مكتمل!'}
+${comments.length>0 ? '\n💬 ملاحظات تحتاج مراجعة مع يوسف:\n' + comments.join('\n') : ''}
 
 جزاكم الله خيراً 🌿`;
 
