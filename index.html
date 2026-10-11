@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#1b4332">
+<title>تحصيل الكفالات</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5f7f6;--surface:#fff;--surface-2:#f9fbf9;--border:#e5efe8;
+  --text:#1b4332;--text-dim:#555;--text-muted:#777;
+  --accent:#1b4332;--accent-2:#2d6a4f;--accent-light:#95d5b2;
+  --sadaqat:#e9c46a;--sadaqat-bg:#fef7e0;--sadaqat-text:#8a6500;
+  --prepaid-bg:#f0f0f0;--prepaid-text:#888;
+  --danger:#c53030;--danger-bg:#fce4e4;
+  --success:#2d6a4f;--chip-bg:#edf7f0;
+  --warn:#f4a261;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1612;--surface:#1a2520;--surface-2:#152019;--border:#2a3d33;
+    --text:#e5efe8;--text-dim:#b7d8cc;--text-muted:#8ba89a;
+    --accent:#95d5b2;--accent-2:#74c69d;--accent-light:#52b788;
+    --sadaqat:#e9c46a;--sadaqat-bg:#3d3016;--sadaqat-text:#f4e4b8;
+    --prepaid-bg:#1f2a24;--prepaid-text:#7a9087;
+    --danger:#fc8181;--danger-bg:#3d1818;
+    --success:#52b788;--chip-bg:#1f2d26;
+  }
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{font-family:'Tajawal',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+body{padding-bottom:env(safe-area-inset-bottom)}
+
+.header{background:linear-gradient(135deg,#1b4332 0%,#2d6a4f 100%);color:#fff;padding:16px 20px 20px;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,.08)}
+.header-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.header h1{font-size:20px;font-weight:700}
+.cloud-status{font-size:11px;background:rgba(255,255,255,.15);padding:4px 10px;border-radius:100px;display:flex;align-items:center;gap:6px}
+.cloud-status .dot{width:8px;height:8px;border-radius:50%;background:#95d5b2;animation:pulse 2s infinite}
+.cloud-status.offline .dot{background:#f4a261;animation:none}
+.cloud-status.saving .dot{background:#f4a261;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.header .sub{font-size:13px;opacity:.9;font-weight:400}
+.progress-wrap{margin-top:14px;background:rgba(255,255,255,.2);height:8px;border-radius:100px;overflow:hidden}
+.progress-bar{height:100%;background:#95d5b2;border-radius:100px;width:0%;transition:width .4s ease}
+.progress-text{margin-top:8px;display:flex;justify-content:space-between;font-size:12px;font-weight:500}
+
+.month-tabs{display:flex;gap:8px;padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50}
+.month-tab{flex:1;padding:12px;border-radius:12px;border:2px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s}
+.month-tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.month-tab .month-amt{display:block;font-size:11px;opacity:.9;font-weight:500;margin-top:2px}
+
+.filter-row{display:flex;gap:8px;padding:12px 16px 8px;background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
+.filter-row::-webkit-scrollbar{display:none}
+.chip{padding:8px 14px;border-radius:100px;background:var(--chip-bg);color:var(--text);font-family:inherit;font-size:13px;font-weight:500;border:none;cursor:pointer;white-space:nowrap;transition:all .2s}
+.chip.active{background:var(--accent);color:#fff}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .chip.active{color:#0f1612}}
+.chip .count{font-size:11px;opacity:.8;margin-right:4px}
+
+.container{padding:12px 16px 120px;max-width:600px;margin:0 auto}
+.pt-card{background:var(--surface);border-radius:16px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);border:1px solid var(--border);transition:all .3s}
+.pt-card.done{opacity:.7}
+.pt-head{padding:16px;cursor:pointer;display:flex;align-items:center;gap:12px;position:relative}
+.pt-status{width:28px;height:28px;border-radius:50%;background:var(--chip-bg);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--accent-light);border:2px solid var(--border)}
+.pt-status.done{background:var(--accent-2);color:#fff;border-color:var(--accent-2)}
+.pt-status.partial{background:var(--warn);color:#fff;border-color:var(--warn)}
+.pt-info{flex:1;min-width:0}
+.pt-name{font-weight:700;font-size:16px;margin-bottom:2px}
+.pt-amount{font-size:13px;color:var(--text-dim);font-weight:500}
+.pt-amount .sep-oct{display:flex;gap:12px;margin-top:2px}
+.pt-amount .sep-oct span{font-size:11px}
+.pt-arrow{color:var(--accent-light);font-size:18px;transition:transform .3s}
+.pt-card.open .pt-arrow{transform:rotate(180deg)}
+
+.pt-body{display:none;padding:0 16px 16px;border-top:1px solid var(--border)}
+.pt-card.open .pt-body{display:block}
+
+.quick-actions{display:flex;gap:8px;padding:14px 0 10px}
+.btn-pay{flex:1;padding:14px;border-radius:12px;border:none;font-family:inherit;font-weight:700;font-size:14px;cursor:pointer;transition:all .2s}
+.btn-yes{background:var(--success);color:#fff}
+.btn-no{background:var(--danger-bg);color:var(--danger)}
+.btn-small{padding:7px 12px;font-size:12px;flex:0;white-space:nowrap}
+
+.kafeel-list{margin-top:12px}
+.kafeel-item{padding:12px;background:var(--surface-2);border-radius:10px;margin-bottom:8px;border-right:3px solid var(--accent-light)}
+.kafeel-item.sadaqat{border-right-color:var(--sadaqat);background:var(--sadaqat-bg)}
+.kafeel-item.sadaqat .kafeel-details{color:var(--sadaqat-text)}
+.kafeel-item.prepaid{background:var(--prepaid-bg);border-right-color:#aaa;opacity:.75}
+.kafeel-item.paid-ahead{background:#e8f5e9;border-right-color:#4caf50}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .kafeel-item.paid-ahead{background:#1b3b22;border-right-color:#52b788}}
+
+.kafeel-name{font-weight:700;font-size:14px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.kafeel-amount{font-weight:500;color:var(--accent-2);font-size:13px}
+.kafeel-details{font-size:12px;color:var(--text-dim);line-height:1.6;margin-top:4px}
+.kafeel-prepaid{font-size:11px;color:var(--text-muted);font-style:italic;margin-top:4px}
+.prepaid-badge{display:inline-block;background:#aaa;color:#fff;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;margin-right:6px}
+.ahead-badge{display:inline-block;background:#4caf50;color:#fff;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;margin-right:6px}
+
+.kafeel-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.month-select-inline{padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-family:inherit;font-size:12px;color:var(--text);flex:1;min-width:120px;cursor:pointer}
+
+.note-banner{background:linear-gradient(135deg,var(--sadaqat-bg) 0%,#fce4a4 100%);padding:14px 16px;margin:12px 16px 12px;border-radius:12px;font-size:12px;color:var(--sadaqat-text);line-height:1.6;border:1px solid var(--sadaqat)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .note-banner{background:var(--sadaqat-bg)}}
+.note-banner strong{display:block;margin-bottom:4px;font-weight:700}
+
+.welcome-card{background:var(--surface);border-radius:16px;padding:20px;margin:12px 16px;text-align:center;border:1px solid var(--border);box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.welcome-card h2{font-size:16px;margin-bottom:8px;color:var(--accent)}
+.welcome-card p{font-size:13px;color:var(--text-dim);line-height:1.7}
+.welcome-card .emoji{font-size:30px;margin-bottom:10px}
+
+.summary-bar{position:fixed;bottom:0;left:0;right:0;background:var(--surface);padding:14px 16px calc(14px + env(safe-area-inset-bottom));box-shadow:0 -2px 16px rgba(0,0,0,.1);display:flex;gap:10px;z-index:90;border-top:1px solid var(--border)}
+.summary-info{flex:1;display:flex;flex-direction:column;justify-content:center}
+.summary-remaining{font-size:11px;color:var(--text-dim);font-weight:500}
+.summary-amount{font-size:18px;font-weight:900;color:var(--text)}
+.btn-share{padding:14px 20px;background:var(--accent-2);color:#fff;border:none;border-radius:12px;font-family:inherit;font-weight:700;font-size:14px;cursor:pointer}
+
+.toast{position:fixed;top:80px;left:50%;transform:translateX(-50%) translateY(-100px);background:var(--accent);color:#fff;padding:12px 20px;border-radius:100px;font-weight:500;font-size:14px;z-index:200;transition:transform .3s;box-shadow:0 4px 16px rgba(0,0,0,.2);white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .toast{color:#0f1612}}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-end;justify-content:center;z-index:300;padding:16px}
+.modal.show{display:flex}
+.modal-content{background:var(--surface);border-radius:20px 20px 0 0;width:100%;max-width:500px;padding:20px;max-height:85vh;overflow-y:auto;animation:slideUp .3s;color:var(--text)}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.modal-handle{width:40px;height:4px;background:var(--border);border-radius:100px;margin:0 auto 16px}
+.modal-title{font-weight:700;font-size:18px;margin-bottom:12px;text-align:center}
+.modal-text{font-size:14px;line-height:1.7;color:var(--text-dim);background:var(--surface-2);padding:14px;border-radius:12px;max-height:300px;overflow-y:auto;white-space:pre-wrap;font-family:inherit}
+.modal-actions{display:flex;gap:10px;margin-top:16px}
+.modal-btn{flex:1;padding:14px;border:none;border-radius:12px;font-family:inherit;font-weight:700;font-size:14px;cursor:pointer}
+.modal-btn-primary{background:var(--accent);color:#fff}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .modal-btn-primary{color:#0f1612}}
+.modal-btn-secondary{background:var(--chip-bg);color:var(--text)}
+
+.help-fab{position:fixed;bottom:95px;left:16px;width:48px;height:48px;background:var(--accent-2);color:#fff;border-radius:50%;border:none;font-size:22px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,.2);cursor:pointer;z-index:80}
+
+.loading{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:1000;flex-direction:column;gap:16px}
+.loading.hide{display:none}
+.spinner{width:40px;height:40px;border:4px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:14px;color:var(--text-dim)}
+</style>
+</head>
+<body>
+
+<div class="loading" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">جاري الاتصال بالسحابة... 🌿</div>
+</div>
+
+<div class="header">
+  <div class="header-top">
+    <h1>تحصيل الكفالات 🌿</h1>
+    <div class="cloud-status" id="cloudStatus"><span class="dot"></span><span id="cloudText">محفوظ</span></div>
+  </div>
+  <div class="sub">سبتمبر وأكتوبر ٢٠٢٦</div>
+  <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+  <div class="progress-text">
+    <span id="progressLabel">٠ من ٥٤ مجموعة</span>
+    <span id="progressAmount">٠ / ١٢٩٬٣٦٠</span>
+  </div>
+</div>
+
+<div class="welcome-card" id="welcomeCard">
+  <div class="emoji">🌿</div>
+  <h2>أهلاً نشوى</h2>
+  <p>اختاري الشهر، ثم اضغطي على المجموعة لتفتح. يمكنكِ تسجيل الدفع للمجموعة كاملة، أو لكل كفيل منفرد، أو حتى لفترة مقدمة. كل شيء يُحفظ تلقائياً.</p>
+</div>
+
+<div class="month-tabs">
+  <button class="month-tab active" data-month="sep" onclick="switchMonth('sep')">
+    سبتمبر
+    <span class="month-amt">١٢٩٬٣٦٠ جنيه</span>
+  </button>
+  <button class="month-tab" data-month="oct" onclick="switchMonth('oct')">
+    أكتوبر
+    <span class="month-amt">١٢٩٬٣٦٠ جنيه</span>
+  </button>
+</div>
+
+<div class="filter-row">
+  <button class="chip active" data-filter="all" onclick="setFilter('all')">الكل <span class="count" id="count-all"></span></button>
+  <button class="chip" data-filter="pending" onclick="setFilter('pending')">متبقي <span class="count" id="count-pending"></span></button>
+  <button class="chip" data-filter="done" onclick="setFilter('done')">محصّل ✓ <span class="count" id="count-done"></span></button>
+  <button class="chip" data-filter="partial" onclick="setFilter('partial')">جزئي <span class="count" id="count-partial"></span></button>
+</div>
+
+<div class="note-banner">
+  <strong>📝 ملاحظة عن الصدقات</strong>
+  يا نشوى، في سبتمبر pool الصدقات كان ٣٥٬٧٧٥ — منها ٤٬٥٥٠ ثابتة من نورا هلال + إجلال بهجت + داليا عرفة (ضمن مجموعة نشوى صلاح أدناه). الباقي ٣١٬٢٢٥ غُطّي من الزكاة فلست مطالبة به.
+</div>
+
+<div class="container" id="ptContainer"></div>
+
+<button class="help-fab" onclick="showHelp()">؟</button>
+
+<div class="summary-bar">
+  <div class="summary-info">
+    <div class="summary-remaining">متبقي للتحصيل (<span id="currentMonthLabel">سبتمبر</span>)</div>
+    <div class="summary-amount" id="remainingAmount">١٢٩٬٣٦٠</div>
+  </div>
+  <button class="btn-share" onclick="shareProgress()">📤 إرسال التقدم</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal" id="helpModal">
+  <div class="modal-content">
+    <div class="modal-handle"></div>
+    <div class="modal-title">كيف أستخدم التطبيق؟ 🌿</div>
+    <div class="modal-text">١. اختاري الشهر من الأعلى (سبتمبر أو أكتوبر)
+
+٢. كل بطاقة = مجموعة Paid Through
+   اضغطي عليها لتفتح وتشوفي التفاصيل
+
+٣. طرق تسجيل الدفع:
+
+   ✅ "تم الدفع كامل" الأخضر = كل المجموعة
+
+   ⬜ كفيل منفرد = اضغطي "دُفع" أمامه
+
+   📅 "دفع مقدماً" = اختاري شهر النهاية
+      مثال: إنجي عامر دفعت لمايو 2027
+      → سبتمبر وأكتوبر تظهر لها تلقائياً كمدفوعة
+      → أخضر فاتح 📌
+
+٤. ✨ كل تعديل يُحفظ تلقائياً
+   • يوسف يشوف تقدمك فوراً
+   • حتى لو أغلقتِ التطبيق، كل شيء محفوظ
+
+٥. اضغطي "إرسال التقدم" لإرسال ملخص على واتساب
+
+٦. الزر "؟" في أي وقت لعرض هذا الشرح
+
+💚 جزاكِ الله خيراً على مجهودك</div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-primary" onclick="closeHelp()">تمام، فهمت 💚</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="summaryModal">
+  <div class="modal-content">
+    <div class="modal-handle"></div>
+    <div class="modal-title">ملخص التحصيل 📊</div>
+    <div class="modal-text" id="summaryText"></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-secondary" onclick="closeSummary()">إغلاق</button>
+      <button class="modal-btn modal-btn-primary" onclick="sendWhatsApp()">📲 واتساب</button>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAEQBtH17bSQlQB4yo_GpafON-zVYPhSOU",
+  authDomain: "khidma-collection.firebaseapp.com",
+  databaseURL: "https://khidma-collection-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "khidma-collection",
+  storageBucket: "khidma-collection.firebasestorage.app",
+  messagingSenderId: "584689635009",
+  appId: "1:584689635009:web:d06123de63e8b6dac20e40"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+window._firebase = { db, ref, set, onValue, update };
+window.dispatchEvent(new Event('firebase-ready'));
+</script>
+
+<script>
+// Embedded data (will be injected)
+window.EMBEDDED_DATA = [{"pt": "ولاء وفيق", "sep": 10000.0, "oct": 10000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "نور حازم", "sep": 500.0, "oct": 500.0, "details": "عمر صقر عبدالله (500)", "prepaid": []}, {"name": "وليد وفيق صلاح", "sep": 1000.0, "oct": 1000.0, "details": "محمد محمود محمد (500), مكة حامد محمد عبده (500)", "prepaid": []}, {"name": "حازم المقدم", "sep": 4000.0, "oct": 4000.0, "details": "ياسين أنور محمد (1,000), أسما محمود (500), حسن محمود (500), محمد زغلول (1,000), محمد عبد الحكيم (1,000)", "prepaid": []}, {"name": "ألاء عزب", "sep": 500.0, "oct": 500.0, "details": "محمد محمود محمد (500)", "prepaid": []}, {"name": "ولاء وفيق", "sep": 3000.0, "oct": 3000.0, "details": "محمود حنفى (750), اسراء حنفى (750), سيف محمد حسن (500), منه عبد الحكيم (1,000)", "prepaid": []}, {"name": "فاطمه مصطفى", "sep": 500.0, "oct": 500.0, "details": "ماهر محمد يادم (500)", "prepaid": []}, {"name": "جودى المقدم", "sep": 500.0, "oct": 500.0, "details": "علاء عبد التواب (500)", "prepaid": []}]}, {"pt": "ريم شعلان", "sep": 7000.0, "oct": 7000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "ريم شعلان", "sep": 7000.0, "oct": 7000.0, "details": "جني صلاح فرج (1,000), ياسمين وائل بسيوني (1,000), يوسف وائل بسيوني (1,000), بسملة حسين سليم (1,000), ملك عصام ياسين (1,000), تيارا عصام ياسين (1,000), مروان عصام ياسين (1,000)", "prepaid": []}]}, {"pt": "رانيا جلال", "sep": 6000.0, "oct": 6000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "رانيا جلال", "sep": 6000.0, "oct": 6000.0, "details": "احمد رمضان صالح (500), ملك رمضان صالح (500), غرام أحمد محمد (500), حبيبه عبدالرحمن (500), صلاح صلاح محمود (500), محمود محمد كامل (500), ندى محمد سلامة (500), دعاء حسين (500), مريم عبد النبي (500), ريماس محمد سعد (500), أماني جابر عبدة (500), أسيل هاني محمد (500)", "prepaid": []}]}, {"pt": "صبا صالح", "sep": 6000.0, "oct": 6000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "صبا صالح", "sep": 6000.0, "oct": 6000.0, "details": "جنى محمد عبد العال عبد الوهاب (500), عمار محمد عبد العال عبد الوهاب (500), اسراء محمود سعد ابراهيم سعد (500), عمر محمود سعد ابراهيم سعد (500), محمود سامح محمود (350), ياسين عبد الله (350), احمد عبد الله (350), محمد اشرف (350), احمد مجدى (350), حسن وليد (350), وليد وليد (350), كريم سيد علي (500), نصر محمد يادم (350), محمود محمد حسين (700)", "prepaid": []}]}, {"pt": "يسرا منير", "sep": 5750.0, "oct": 5750.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "يسرا منير", "sep": 3000.0, "oct": 3000.0, "details": "غرام وائل بسيوني (1,000), أنس يحي (1,000), نرمين سيد علي (1,000)", "prepaid": []}, {"name": "عبدالرحمن التميمي", "sep": 2000.0, "oct": 2000.0, "details": "محمود فتحي سيد (1,000), عبد العزيز سيف الدين (1,000)", "prepaid": []}, {"name": "دينا حاتم", "sep": 750.0, "oct": 750.0, "details": "احمد محمد الفالح (750)", "prepaid": []}]}, {"pt": "عبد الرحمن اشرف الشرباصى", "sep": 5600.0, "oct": 5600.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "عبد الرحمن اشرف الشرباصى", "sep": 3200.0, "oct": 3200.0, "details": "فيصل محمد عدلي (800), مصعب عادل (800), بسنت حسن (800), بسملة هاني (800)", "prepaid": []}, {"name": "نانيس احمد", "sep": 2400.0, "oct": 2400.0, "details": "فهد محمود جمال (800), صهيب عادل (800), عبدالرحمن امين (800)", "prepaid": []}]}, {"pt": "نشوى صلاح", "sep": 5550.0, "oct": 5550.0, "sadaqat": 4550, "sadaqat_note": "نورا 1,000 + إجلال 1,550 + داليا 2,000", "kafeels": [{"name": "نشوى صلاح", "sep": 1000.0, "oct": 1000.0, "details": "محمد محمد محمود (1,000)", "prepaid": []}]}, {"pt": "داليا عرفة", "sep": 4500.0, "oct": 4500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "داليا عرفة", "sep": 2000.0, "oct": 2000.0, "details": "احمد محمود (400), رقية محمود (400), يوسف جمال مأمون (400), منه محمود (400), عبيد حسن (400)", "prepaid": []}, {"name": "ناصف عرفة", "sep": 1250, "oct": 1250, "details": "علي هاني محمد (1,250)", "prepaid": []}, {"name": "علا خطار", "sep": 1250, "oct": 1250, "details": "إسلام سلامة شحاتة (1,250)", "prepaid": []}]}, {"pt": "تامر أبو النصر", "sep": 4000.0, "oct": 4000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "تامر أبو النصر", "sep": 4000.0, "oct": 4000.0, "details": "مروان سيد حسين (2,000), رغدة سيد حسين (2,000)", "prepaid": []}]}, {"pt": "أية أيمن", "sep": 3500.0, "oct": 3500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "غادة فتحي", "sep": 500, "oct": 500, "details": "عادل عاطف فتحى عبد الودود عبد العزيز (500)", "prepaid": []}, {"name": "إيهاب علي", "sep": 600, "oct": 600, "details": "هادي انور عبد الحميد سلامه (600)", "prepaid": []}, {"name": "منال محي الدين", "sep": 600.0, "oct": 600.0, "details": "سندس رجب فرج رجب السوداني (600)", "prepaid": []}, {"name": "نوال عمر", "sep": 600.0, "oct": 600.0, "details": "ملك حامد محمود أحمد (600)", "prepaid": []}, {"name": "أية أيمن", "sep": 600.0, "oct": 600.0, "details": "حسين محمد حسين على (600)", "prepaid": []}, {"name": "سعاد محمد علي", "sep": 600.0, "oct": 600.0, "details": "ملك محمد أحمد عبد التواب (600)", "prepaid": []}]}, {"pt": "سلمى محمود طلعت", "sep": 3000.0, "oct": 3000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "سلمى محمود طلعت", "sep": 2000.0, "oct": 2000.0, "details": "جمانة محسن تمام (1,000), سعيد صابر سعيد (1,000)", "prepaid": []}, {"name": "هبة الله محمد نعمان", "sep": 1000.0, "oct": 1000.0, "details": "يارا صابر سعيد (1,000)", "prepaid": []}]}, {"pt": "سيف الدين منير", "sep": 3000.0, "oct": 3000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "سيف الدين منير", "sep": 3000.0, "oct": 3000.0, "details": "مريم محمد عدلي (1,000), زهره عاطف امين (1,000), يونس محمد محمود (1,000)", "prepaid": []}]}, {"pt": "كريم نايل", "sep": 3000.0, "oct": 3000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "كريم نايل", "sep": 3000.0, "oct": 3000.0, "details": "إسماعيل إسماعيل (3,000)", "prepaid": []}]}, {"pt": "هشام نايل", "sep": 3000.0, "oct": 3000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "هشام نايل", "sep": 3000.0, "oct": 3000.0, "details": "ملك عمرو محمد المنتصر مليجي أمين (3,000)", "prepaid": []}]}, {"pt": "ولاء حجازى", "sep": 2700.0, "oct": 2700.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "مصطفي حجازي", "sep": 1000.0, "oct": 1000.0, "details": "فارس محمد (800), nan (200)", "prepaid": []}, {"name": "ولاء حجازى", "sep": 700.0, "oct": 700.0, "details": "ميادة عدلي محمد حسين (700)", "prepaid": []}, {"name": "خالد حجازي", "sep": 1000.0, "oct": 1000.0, "details": "محمد حمدي (1,000)", "prepaid": []}]}, {"pt": "ايمان حجازي", "sep": 2500.0, "oct": 2500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "ايمان حجازي", "sep": 2500.0, "oct": 2500.0, "details": "ملك منير (500), جيداء منير (500), ميار منير (500), داليا محمود شعبان محمود (500), ياسين محمد سيد جاد (500)", "prepaid": []}]}, {"pt": "جيهان عامر", "sep": 2500.0, "oct": 2500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "جيهان عامر", "sep": 2500.0, "oct": 2500.0, "details": "محمد سامي زايد (500), مروان سامي زايد (500), منه سامي زايد (750), مكه سامي زايد (750)", "prepaid": []}]}, {"pt": "مهيرة شمس", "sep": 2500.0, "oct": 2500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "إحسان عفيفي", "sep": 500.0, "oct": 500.0, "details": "ملك محمد عدلي (500)", "prepaid": []}, {"name": "انجي عفيفي", "sep": 2000.0, "oct": 2000.0, "details": "زياد نبيل عبد المغيث عبد المولى (1,000), محمد نبيل عبد المغيث عبد المولى (1,000)", "prepaid": []}]}, {"pt": "شرين إحسان عفيفي", "sep": 2400.0, "oct": 2400.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "مهند جمجوم", "sep": 400.0, "oct": 400.0, "details": "ياسين لطفي أحمد (400)", "prepaid": []}, {"name": "شرين إحسان عفيفي", "sep": 1500.0, "oct": 1500.0, "details": "رؤى نبيل محمد زيدان إبراهيم (750), جنات عاطف فتحى عبد الودود عبد العزيز (750)", "prepaid": []}, {"name": "مهيرة شمس", "sep": 500.0, "oct": 500.0, "details": "فارس نبيل عبد المغيث عبد المؤلى (500)", "prepaid": []}]}, {"pt": "نجلاء الشريف", "sep": 2400.0, "oct": 2400.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "نجلاء الشريف", "sep": 2400.0, "oct": 2400.0, "details": "أمين شوقي أحمد (800), غريب أنور منصور (800), مؤمن شوقي أحمد (800)", "prepaid": []}]}, {"pt": "بسمة عبد العزيز غالي", "sep": 2000.0, "oct": 2000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "بسمة عبد العزيز غالي", "sep": 2000.0, "oct": 2000.0, "details": "سما محمد سلامة (500), عمر محمد سلامة (500), ساميه رجب على (1,000)", "prepaid": []}]}, {"pt": "داليا عبد الرحمن", "sep": 2000.0, "oct": 2000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "داليا عبد الرحمن", "sep": 2000.0, "oct": 2000.0, "details": "ياسين عبد الموجود (1,000), مكة علي محمد (1,000)", "prepaid": []}]}, {"pt": "شهيرة سامي", "sep": 2000.0, "oct": 2000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "شهيرة سامي", "sep": 2000.0, "oct": 2000.0, "details": "يوسف محمود (500), صفاء صابر محمد (1,000), سلمي صابرسعيد (500)", "prepaid": []}]}, {"pt": "فاتنات نصير", "sep": 2000.0, "oct": 2000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "منير الزاهد", "sep": 0, "oct": 0, "details": "", "prepaid": ["سيف فادي منصور حتى يناير 2027", "يوسف فادي منصور حتى يناير 2027", "ادهم مدحت حتى يناير 2027", "طلال مدحت حتى يناير 2027", "رقية مدحت حتى يناير 2027"]}, {"name": "فاتنات نصير", "sep": 1500.0, "oct": 1500.0, "details": "مؤمن فتحي سيد (500), مراون فتحي سيد (500), نورهان سيد سليم (500)", "prepaid": ["مندي أسامه حامد حتى يونيو 2027", "تغريد أسامه حامد حتى يونيو 2027", "عبدالرحمن أحمد حسين حتى يناير 2027", "زهره أحمد حسين حتى يناير 2027"]}, {"name": "ندا عارف", "sep": 500.0, "oct": 500.0, "details": "علاء سيد سليم (500)", "prepaid": []}]}, {"pt": "محمد كيلاني", "sep": 2000.0, "oct": 2000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "محمد كيلاني", "sep": 2000.0, "oct": 2000.0, "details": "احمد ممدوح حامد (1,000), أية ممدوح حامد (1,000)", "prepaid": []}]}, {"pt": "منار فاروق لطفي", "sep": 2000.0, "oct": 2000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "منار فاروق لطفي", "sep": 2000.0, "oct": 2000.0, "details": "ياسين صابر سعيد محمد عبدالله (2,000)", "prepaid": []}]}, {"pt": "ميادة مصطفى", "sep": 2000.0, "oct": 2000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "ميادة مصطفى", "sep": 2000.0, "oct": 2000.0, "details": "nan (2,000)", "prepaid": []}]}, {"pt": "نغم محمود إبر اهيم", "sep": 2000.0, "oct": 2000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "نغم محمود إبر اهيم", "sep": 2000.0, "oct": 2000.0, "details": "إبراهيم طارق إبراهيم (500), شهد طارق إبراهيم (500), حبيبه طارق إبراهيم (500), فريده محمد حسن (500)", "prepaid": []}]}, {"pt": "نور شطلاوي", "sep": 2000.0, "oct": 2000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "نور شطلاوي", "sep": 2000.0, "oct": 2000.0, "details": "هاني مصطفى فتحي (1,000), مروان علي عبد الرحيم حسن (1,000)", "prepaid": []}]}, {"pt": "هناء عدلي", "sep": 2000.0, "oct": 2000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "هناء عدلي", "sep": 1700.0, "oct": 1700.0, "details": "محمود هاني محمد سالم (700), محمد حسين محمود (500), دعاء سيد سليم (500)", "prepaid": []}, {"name": "لؤلؤة عبدالسلام", "sep": 300.0, "oct": 300.0, "details": "سندس صلاح فتحي (300)", "prepaid": []}]}, {"pt": "آيات عبدالخالق", "sep": 1750.0, "oct": 1750.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "آيات عبدالخالق", "sep": 1750.0, "oct": 1750.0, "details": "nan (750), nan (1,000)", "prepaid": []}, {"name": "فؤاد فتحي الصياد", "sep": 0, "oct": 0, "details": "", "prepaid": ["سجدة محمة فتحي حتى فبراير 2027"]}]}, {"pt": "رنده عزت", "sep": 1710.0, "oct": 1710.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "عزت حنفي إبراهيم", "sep": 570.0, "oct": 570.0, "details": "روان رجب سالم (570)", "prepaid": []}, {"name": "نجوي إبراهيم علي", "sep": 570.0, "oct": 570.0, "details": "كاميليا شوقي أحمد (570)", "prepaid": []}, {"name": "رنده عزت", "sep": 570.0, "oct": 570.0, "details": "ريم مصطفى (570)", "prepaid": []}]}, {"pt": "عبدالناصر حسن", "sep": 1700.0, "oct": 1700.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "عبدالناصر حسن", "sep": 500.0, "oct": 500.0, "details": "أيه زايد صالح (500)", "prepaid": []}, {"name": "محمد عبد الناصر", "sep": 1200.0, "oct": 1200.0, "details": "بسمله عمرو (600), ليلي عمرو (600)", "prepaid": []}]}, {"pt": "هبة باشا", "sep": 1600.0, "oct": 1600.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "حنان الباشا", "sep": 800, "oct": 800, "details": "عائشة حازم نبيل بدوى السيد (800)", "prepaid": []}, {"name": "هبة باشا", "sep": 800.0, "oct": 800.0, "details": "محمد علاء (800)", "prepaid": []}]}, {"pt": "احمد خالد", "sep": 1500.0, "oct": 1500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "احمد خالد", "sep": 500.0, "oct": 500.0, "details": "بدوي صلاح فرج (500)", "prepaid": []}, {"name": "عبدالله وحيد", "sep": 500.0, "oct": 500.0, "details": "محمد صلاح فرج (500)", "prepaid": []}, {"name": "محمد وحيد", "sep": 500.0, "oct": 500.0, "details": "دهب صلاح فرج (500)", "prepaid": []}]}, {"pt": "حسام الدين أمين", "sep": 1500.0, "oct": 1500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "حسام الدين أمين", "sep": 1500.0, "oct": 1500.0, "details": "نورا احمد شعبان (750), يس احمد شعبان (750)", "prepaid": []}]}, {"pt": "غادة ناجي", "sep": 1500.0, "oct": 1500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "غادة ناجي", "sep": 1500.0, "oct": 1500.0, "details": "منه عدلي محمد حسين (600), سيف خالد صالح (300), سفيان خالد صالح (300), مروان علي محمد (300)", "prepaid": ["جني أحمد حسين حتى مارس 2027"]}, {"name": "سوزان سمير الجمل", "sep": 0, "oct": 0, "details": "", "prepaid": ["رهف أحمد صلاح حتى مارس 2027"]}]}, {"pt": "إحسان فتحي", "sep": 1400.0, "oct": 1400.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "إحسان فتحي", "sep": 700.0, "oct": 700.0, "details": "محمد عاطف أمين (700)", "prepaid": []}, {"name": "عبير فتحي", "sep": 700, "oct": 700, "details": "ملك جمعه حسن محمد (700)", "prepaid": []}]}, {"pt": "آية خالد", "sep": 1000.0, "oct": 1000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "آية خالد", "sep": 1000.0, "oct": 1000.0, "details": "حبيبه عادل لطفي (1,000)", "prepaid": []}]}, {"pt": "أمنية كيلاني", "sep": 1000.0, "oct": 1000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "أمنية كيلاني", "sep": 1000.0, "oct": 1000.0, "details": "مريم هاني محمد سالم (1,000)", "prepaid": []}]}, {"pt": "اخت حنان صدقي", "sep": 1000.0, "oct": 1000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "سهير خاطر", "sep": 500.0, "oct": 500.0, "details": "إسلام زايد صالح (500)", "prepaid": []}, {"name": "محمود رفعت", "sep": 500.0, "oct": 500.0, "details": "إسراء محمد كامل (500)", "prepaid": []}]}, {"pt": "غاده لطفي", "sep": 1000.0, "oct": 1000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "غاده لطفي", "sep": 1000.0, "oct": 1000.0, "details": "امنيه محمد عيد (500), سيد محمد عيد (500)", "prepaid": []}]}, {"pt": "نورا هلال", "sep": 1000.0, "oct": 1000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "ياسمين عامر", "sep": 0, "oct": 0, "details": "", "prepaid": ["اسماء عاطف فتحى عبد الودود عبد العزيز حتى مايو 2027"]}, {"name": "يوسف عامر", "sep": 0, "oct": 0, "details": "", "prepaid": ["اسلام عاطف فؤاد عباس السيد حتى مايو 2027", "حمزه حسن مصطفى حتى مايو 2027"]}, {"name": "نورا هلال", "sep": 1000.0, "oct": 1000.0, "details": "ياسمين علي عبد الرحيم حسن (500), اياد فتحى الشحات فتحى عيد (500)", "prepaid": ["جنى أحمد حتى أكتوبر 2026", "سما أحمد حتى أكتوبر 2026", "عطا أحمد حتى أكتوبر 2026", "عماد أحمد حتى أكتوبر 2026", "فاطمة سعيد حتى أكتوبر 2026", "شيماء سعيد حتى أكتوبر 2026", "حسن سعيد حتى أكتوبر 2026", "أحمد محمود سعداوي حتى أكتوبر 2026", "رحمة محمود سعداوي حتى أكتوبر 2026", "محمد محسن علي حتى أكتوبر 2026", "عمر محسن علي حتى أكتوبر 2026", "علي محسن علي حتى أكتوبر 2026"]}, {"name": "إنجي عامر", "sep": 0, "oct": 0, "details": "", "prepaid": ["هند كرم حتى مايو 2027"]}]}, {"pt": "هاله الحبشي", "sep": 1000.0, "oct": 1000.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "هاله الحبشي", "sep": 1000.0, "oct": 1000.0, "details": "مياده عماد احمد (500), ياسمين كامل سالم (500)", "prepaid": []}]}, {"pt": "شريف عمرو صالح", "sep": 850.0, "oct": 850.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "شريف عمرو صالح", "sep": 850.0, "oct": 850.0, "details": "جمال محمد حامد (850)", "prepaid": []}]}, {"pt": "حنان صدقى", "sep": 800.0, "oct": 800.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "محمد أسامة", "sep": 700.0, "oct": 700.0, "details": "عمر جلال عبدالحليم (200), سيف محمد يادم (500)", "prepaid": []}, {"name": "حنان صدقى", "sep": 100.0, "oct": 100.0, "details": "nan (100)", "prepaid": ["فاطمة إسماعيل حتى ديسمبر 2026"]}]}, {"pt": "سلوى صبري", "sep": 700.0, "oct": 700.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "سلوى صبري", "sep": 700.0, "oct": 700.0, "details": "كريم محمد رمضان (700)", "prepaid": []}]}, {"pt": "آية ايهاب", "sep": 500.0, "oct": 500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "آية ايهاب", "sep": 500.0, "oct": 500.0, "details": "مريم مصطفى فتحي (500)", "prepaid": []}]}, {"pt": "أحمد ايهاب علي حسن", "sep": 500.0, "oct": 500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "أحمد ايهاب علي حسن", "sep": 500.0, "oct": 500.0, "details": "محمد عبد الهادي حمادة (500)", "prepaid": []}]}, {"pt": "شهد جاويش", "sep": 500.0, "oct": 500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "شهد جاويش", "sep": 500.0, "oct": 500.0, "details": "مريم كامل محمد (500)", "prepaid": []}]}, {"pt": "عبدالرحمن محمد سليمان", "sep": 500.0, "oct": 500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "عبدالرحمن محمد سليمان", "sep": 500.0, "oct": 500.0, "details": "محمد عماد احمد (500)", "prepaid": []}]}, {"pt": "فرح منير", "sep": 500.0, "oct": 500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "فرح منير", "sep": 500.0, "oct": 500.0, "details": "مريم صبري محمد (500)", "prepaid": []}]}, {"pt": "وردة كمال", "sep": 500.0, "oct": 500.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "وردة كمال", "sep": 500.0, "oct": 500.0, "details": "سالمة حسن فخري (500)", "prepaid": []}]}, {"pt": "إجلال بهجت", "sep": 450.0, "oct": 450.0, "sadaqat": 0, "sadaqat_note": "", "kafeels": [{"name": "إجلال بهجت", "sep": 450.0, "oct": 450.0, "details": "حنين ناصر عبدالله الشحات (200), nan (250)", "prepaid": []}]}];
+
+const MONTH_NAMES_AR = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+const SEP_VAL = 2026*12 + 9;
+const OCT_VAL = 2026*12 + 10;
+
+let DATA = [];
+let currentMonth = 'sep';
+let currentFilter = 'all';
+let state = {};
+let saveTimer = null;
+let firebaseReady = false;
+let syncingFromCloud = false;
+
+window.addEventListener('firebase-ready', () => { firebaseReady = true; init(); });
+// Fallback if firebase fails to load in 3s
+setTimeout(() => { if (!firebaseReady) { console.warn('Firebase timeout'); init(); } }, 3000);
+
+async function init() {
+  DATA = window.EMBEDDED_DATA || [];
+
+  // Load local first for instant display
+  loadLocalState();
+
+  // Then sync from firebase
+  if (firebaseReady && window._firebase) {
+    try {
+      const { db, ref, onValue } = window._firebase;
+      const stateRef = ref(db, 'nashwa_collection/state');
+      onValue(stateRef, (snapshot) => {
+        const val = snapshot.val();
+        if (val && !syncingFromCloud) {
+          state = val;
+          saveLocalState();
+          render();
+        }
+        setCloudStatus('ok', 'متصل ☁️');
+      }, (error) => {
+        console.warn('Firebase read error:', error);
+        setCloudStatus('offline', 'محفوظ محلياً');
+      });
+    } catch(e) {
+      console.warn('Firebase init failed:', e);
+      setCloudStatus('offline', 'محفوظ محلياً');
+    }
+  } else {
+    setCloudStatus('offline', 'محفوظ محلياً');
+  }
+
+  document.getElementById('loading').classList.add('hide');
+  render();
+}
+
+function setCloudStatus(status, text) {
+  const el = document.getElementById('cloudStatus');
+  const t = document.getElementById('cloudText');
+  el.classList.remove('offline', 'saving');
+  if (status === 'offline') el.classList.add('offline');
+  if (status === 'saving') el.classList.add('saving');
+  t.textContent = text;
+}
+
+function loadLocalState() {
+  try {
+    const saved = localStorage.getItem('nashwa_state_v3');
+    if (saved) state = JSON.parse(saved);
+  } catch(e) { state = {}; }
+}
+
+function saveLocalState() {
+  try { localStorage.setItem('nashwa_state_v3', JSON.stringify(state)); } catch(e) {}
+}
+
+function saveState() {
+  saveLocalState();
+
+  if (saveTimer) clearTimeout(saveTimer);
+  setCloudStatus('saving', 'جاري الحفظ...');
+
+  saveTimer = setTimeout(async () => {
+    if (!firebaseReady || !window._firebase) {
+      setCloudStatus('offline', 'محفوظ محلياً');
+      return;
+    }
+    try {
+      const { db, ref, set } = window._firebase;
+      syncingFromCloud = true;
+      await set(ref(db, 'nashwa_collection/state'), state);
+      await set(ref(db, 'nashwa_collection/lastUpdate'), Date.now());
+      setCloudStatus('ok', 'محفوظ ☁️');
+      setTimeout(() => { syncingFromCloud = false; }, 200);
+    } catch(e) {
+      console.warn('Cloud save failed:', e);
+      setCloudStatus('offline', 'محفوظ محلياً');
+      syncingFromCloud = false;
+    }
+  }, 500);
+}
+
+function getPtState(ptName) {
+  return state[ptName] || {};
+}
+
+function updatePtState(ptName, updates) {
+  if (!state[ptName]) state[ptName] = {};
+  Object.assign(state[ptName], updates);
+  saveState();
+  render();
+}
+
+function updateKafeelState(ptName, kafeelName, updates) {
+  if (!state[ptName]) state[ptName] = {};
+  if (!state[ptName].kafeels) state[ptName].kafeels = {};
+  if (!state[ptName].kafeels[kafeelName]) state[ptName].kafeels[kafeelName] = {};
+  Object.assign(state[ptName].kafeels[kafeelName], updates);
+  saveState();
+  render();
+}
+
+function getKafeelState(ptName, kafeelName) {
+  const s = getPtState(ptName);
+  return (s.kafeels && s.kafeels[kafeelName]) || {};
+}
+
+// Parse month string like "مايو 2027" into comparable value
+function parseMonthValue(str) {
+  if (!str) return 0;
+  const parts = str.trim().split(/\s+/);
+  if (parts.length !== 2) return 0;
+  const mIdx = MONTH_NAMES_AR.indexOf(parts[0]);
+  const year = parseInt(parts[1]);
+  if (mIdx < 0 || !year) return 0;
+  return year * 12 + (mIdx + 1);
+}
+
+// Returns status for a kafeel in a specific month
+function kafeelStatus(ptName, kafeelName, monthVal) {
+  const ks = getKafeelState(ptName, kafeelName);
+  // Check if paid_until covers this month
+  if (ks.paid_until) {
+    const paidVal = parseMonthValue(ks.paid_until);
+    if (paidVal >= monthVal) return 'paid-ahead';
+  }
+  // Check per-month flag
+  const monthKey = monthVal === SEP_VAL ? 'sep' : 'oct';
+  if (ks[monthKey] === 'yes') return 'done';
+  if (ks[monthKey] === 'no') return 'pending';
+  return 'pending';
+}
+
+function ptStatus(pt, monthVal) {
+  const monthKey = monthVal === SEP_VAL ? 'sep' : 'oct';
+  const s = getPtState(pt.pt);
+
+  // Check PT-level paid_until
+  if (s.paid_until) {
+    const paidVal = parseMonthValue(s.paid_until);
+    if (paidVal >= monthVal) return 'done';
+  }
+
+  // Check PT-level flag
+  if (s[monthKey] === 'yes') return 'done';
+  if (s[monthKey] === 'no') return 'pending';
+
+  // Aggregate from kafeels
+  const activeKafs = pt.kafeels.filter(k => (monthKey==='sep'?k.sep:k.oct) > 0);
+
+  // Count sadaqat as a "kafeel"
+  let totalItems = activeKafs.length + (pt.sadaqat > 0 ? 1 : 0);
+  if (totalItems === 0) return 'done';
+
+  let doneCount = 0;
+  activeKafs.forEach(k => {
+    const st = kafeelStatus(pt.pt, k.name, monthVal);
+    if (st === 'done' || st === 'paid-ahead') doneCount++;
+  });
+
+  if (pt.sadaqat > 0) {
+    const ss = s.sadaqat || {};
+    if (ss[monthKey] === 'yes') doneCount++;
+    if (ss.paid_until) {
+      const pv = parseMonthValue(ss.paid_until);
+      if (pv >= monthVal) doneCount++;
+    }
+  }
+
+  if (doneCount === totalItems) return 'done';
+  if (doneCount > 0) return 'partial';
+  return 'pending';
+}
+
+function switchMonth(month) {
+  currentMonth = month;
+  document.querySelectorAll('.month-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.month === month);
+  });
+  document.getElementById('currentMonthLabel').textContent = month==='sep'?'سبتمبر':'أكتوبر';
+  render();
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll('.chip').forEach(c => {
+    c.classList.toggle('active', c.dataset.filter === f);
+  });
+  render();
+}
+
+function render() {
+  const container = document.getElementById('ptContainer');
+  container.innerHTML = '';
+
+  let doneCount=0, pendingCount=0, partialCount=0;
+  let totalCollected=0;
+  const monthVal = currentMonth === 'sep' ? SEP_VAL : OCT_VAL;
+
+  const items = DATA.map(pt => {
+    const status = ptStatus(pt, monthVal);
+    const amt = currentMonth==='sep' ? pt.sep : pt.oct;
+    if (status==='done') { doneCount++; totalCollected += amt; }
+    else if (status==='partial') { partialCount++; totalCollected += amt*0.5; }
+    else { pendingCount++; }
+    return {pt, status, amt};
+  });
+
+  document.getElementById('count-all').textContent = DATA.length;
+  document.getElementById('count-pending').textContent = pendingCount;
+  document.getElementById('count-done').textContent = doneCount;
+  document.getElementById('count-partial').textContent = partialCount;
+
+  const totalAmt = DATA.reduce((s,p)=>s+(currentMonth==='sep'?p.sep:p.oct),0);
+  const pct = totalAmt ? (totalCollected/totalAmt*100) : 0;
+  document.getElementById('progressBar').style.width = pct+'%';
+  document.getElementById('progressLabel').textContent = `${doneCount} من ${DATA.length} مجموعة`;
+  document.getElementById('progressAmount').textContent = `${fmt(totalCollected)} / ${fmt(totalAmt)}`;
+  document.getElementById('remainingAmount').textContent = fmt(totalAmt - totalCollected);
+
+  const filtered = items.filter(it => currentFilter==='all' ? true : it.status === currentFilter);
+
+  filtered.forEach(({pt,status,amt}) => {
+    container.appendChild(makeCard(pt, status, amt));
+  });
+}
+
+function makeCard(pt, status, amt) {
+  const card = document.createElement('div');
+  card.className = 'pt-card' + (status==='done' ? ' done' : '');
+  const idx = DATA.indexOf(pt)+1;
+  const statusIcon = status==='done' ? '✓' : status==='partial' ? '◐' : idx;
+  const monthVal = currentMonth === 'sep' ? SEP_VAL : OCT_VAL;
+  const s = getPtState(pt.pt);
+
+  card.innerHTML = `
+    <div class="pt-head" data-toggle="1">
+      <div class="pt-status ${status==='done'?'done':status==='partial'?'partial':''}">${statusIcon}</div>
+      <div class="pt-info">
+        <div class="pt-name">${escHtml(pt.pt)}</div>
+        <div class="pt-amount">${fmt(amt)} جنيه ${pt.sadaqat>0 ? '• يشمل ٤٬٥٥٠ صدقات' : ''}</div>
+      </div>
+      <div class="pt-arrow">▼</div>
+    </div>
+    <div class="pt-body">
+      <div class="quick-actions">
+        <button class="btn-pay btn-yes" data-pt-mark="yes">تم الدفع كامل ✓</button>
+        <button class="btn-pay btn-no" data-pt-mark="no">لم يُدفع بعد</button>
+      </div>
+      <div class="kafeel-actions" style="padding:4px 0 10px">
+        <span style="font-size:12px;color:var(--text-dim);font-weight:500">📅 دفع مقدماً للمجموعة لغاية:</span>
+        <select class="month-select-inline" data-pt-until="1">
+          ${monthOptions(s.paid_until)}
+        </select>
+      </div>
+      ${pt.sadaqat>0 ? renderSadaqat(pt) : ''}
+      <div class="kafeel-list">
+        ${pt.kafeels.map(k => renderKafeel(pt, k)).join('')}
+      </div>
+    </div>
+  `;
+
+  // Attach handlers
+  card.querySelector('.pt-head').addEventListener('click', (e) => {
+    if (!e.target.closest('button, select')) card.classList.toggle('open');
+  });
+
+  card.querySelectorAll('[data-pt-mark]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      markPt(pt, btn.dataset.ptMark);
+    });
+  });
+
+  const ptUntil = card.querySelector('[data-pt-until]');
+  if (ptUntil) ptUntil.addEventListener('change', () => {
+    updatePtState(pt.pt, {paid_until: ptUntil.value || null});
+    if (ptUntil.value) toast('✓ تم تسجيل دفع المجموعة مقدماً حتى ' + ptUntil.value);
+  });
+
+  card.querySelectorAll('[data-sadaqat-mark]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const key = currentMonth;
+      const sdq = s.sadaqat || {};
+      const newVal = sdq[key] === 'yes' ? 'no' : 'yes';
+      const newSdq = {...sdq, [key]: newVal};
+      updatePtState(pt.pt, {sadaqat: newSdq});
+    });
+  });
+
+  const sdqUntil = card.querySelector('[data-sadaqat-until]');
+  if (sdqUntil) sdqUntil.addEventListener('change', () => {
+    const sdq = s.sadaqat || {};
+    const newSdq = {...sdq, paid_until: sdqUntil.value || null};
+    updatePtState(pt.pt, {sadaqat: newSdq});
+    if (sdqUntil.value) toast('✓ الصدقات مدفوعة مقدماً حتى ' + sdqUntil.value);
+  });
+
+  card.querySelectorAll('[data-k-mark]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const kName = btn.dataset.kMark;
+      markKafeel(pt.pt, kName);
+    });
+  });
+
+  card.querySelectorAll('[data-k-until]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const kName = sel.dataset.kUntil;
+      updateKafeelState(pt.pt, kName, {paid_until: sel.value || null});
+      if (sel.value) toast(`✓ ${kName} مدفوع حتى ${sel.value}`);
+    });
+  });
+
+  return card;
+}
+
+function renderSadaqat(pt) {
+  const s = getPtState(pt.pt);
+  const sdq = s.sadaqat || {};
+  const monthKey = currentMonth;
+  const monthVal = currentMonth === 'sep' ? SEP_VAL : OCT_VAL;
+  let paid = sdq[monthKey] === 'yes';
+  let paidAhead = false;
+  if (sdq.paid_until) {
+    const pv = parseMonthValue(sdq.paid_until);
+    if (pv >= monthVal) { paid = true; paidAhead = true; }
+  }
+  const cls = paidAhead ? 'paid-ahead' : 'sadaqat';
+
+  return `
+    <div class="kafeel-item ${cls}">
+      <div class="kafeel-name">
+        <span>🟡 صدقات ثابتة <span class="kafeel-amount">${fmt(pt.sadaqat)}</span>${paidAhead?' <span class="ahead-badge">مقدماً</span>':''}</span>
+        <button class="btn-pay btn-small ${paid?'btn-yes':'btn-no'}" data-sadaqat-mark="1">${paid?'✓ دُفع':'لم يُدفع'}</button>
+      </div>
+      <div class="kafeel-details">${escHtml(pt.sadaqat_note)}</div>
+      <div class="kafeel-actions">
+        <span style="font-size:11px;color:var(--text-dim)">دفع مقدماً حتى:</span>
+        <select class="month-select-inline" data-sadaqat-until="1">
+          ${monthOptions(sdq.paid_until)}
+        </select>
+      </div>
+    </div>
+  `;
+}
+
+function renderKafeel(pt, k) {
+  const monthVal = currentMonth === 'sep' ? SEP_VAL : OCT_VAL;
+  const amt = currentMonth==='sep' ? k.sep : k.oct;
+  const prepaid = k.prepaid && k.prepaid.length>0;
+  const kstatus = kafeelStatus(pt.pt, k.name, monthVal);
+  const ks = getKafeelState(pt.pt, k.name);
+
+  // If no amount for either month and only has prepaid info — show as embedded prepaid note
+  if (amt === 0 && prepaid && !ks.paid_until && !ks.sep && !ks.oct) {
+    return `
+      <div class="kafeel-item prepaid">
+        <div class="kafeel-name"><span>📌 ${escHtml(k.name)} <span class="prepaid-badge">مدفوع مقدماً سلفاً</span></span></div>
+        <div class="kafeel-prepaid">${escHtml(k.prepaid.join(' • '))}</div>
+      </div>
+    `;
+  }
+
+  const paid = kstatus === 'done';
+  const paidAhead = kstatus === 'paid-ahead';
+  const itemCls = paidAhead ? 'paid-ahead' : '';
+  const btnLabel = paid || paidAhead ? '✓ دُفع' : 'لم يُدفع';
+  const btnCls = paid || paidAhead ? 'btn-yes' : 'btn-no';
+
+  return `
+    <div class="kafeel-item ${itemCls}">
+      <div class="kafeel-name">
+        <span>⬜ ${escHtml(k.name)} <span class="kafeel-amount">${fmt(amt)}</span>${paidAhead?' <span class="ahead-badge">مقدماً</span>':''}</span>
+        <button class="btn-pay btn-small ${btnCls}" data-k-mark="${encodeURIComponent(k.name)}">${btnLabel}</button>
+      </div>
+      ${k.details ? `<div class="kafeel-details">${escHtml(k.details)}</div>` : ''}
+      ${prepaid ? `<div class="kafeel-prepaid">📌 أيضاً مدفوع سلفاً: ${escHtml(k.prepaid.join(' • '))}</div>` : ''}
+      <div class="kafeel-actions">
+        <span style="font-size:11px;color:var(--text-dim)">دفع مقدماً لغاية:</span>
+        <select class="month-select-inline" data-k-until="${encodeURIComponent(k.name)}">
+          ${monthOptions(ks.paid_until)}
+        </select>
+      </div>
+    </div>
+  `;
+}
+
+function markPt(pt, status) {
+  const monthKey = currentMonth;
+  const updates = {[monthKey]: status};
+  // Also set sadaqat if exists
+  const s = getPtState(pt.pt);
+  if (pt.sadaqat > 0) {
+    updates.sadaqat = {...(s.sadaqat||{}), [monthKey]: status};
+  }
+  // Set all active kafeels
+  if (!updates.kafeels) updates.kafeels = {...(s.kafeels||{})};
+  pt.kafeels.forEach(k => {
+    const amt = monthKey==='sep' ? k.sep : k.oct;
+    if (amt > 0) {
+      updates.kafeels[k.name] = {...(updates.kafeels[k.name]||{}), [monthKey]: status};
+    }
+  });
+  updatePtState(pt.pt, updates);
+  toast(status==='yes' ? '✓ تم تسجيل الدفع كاملاً' : 'تم التسجيل كغير مدفوع');
+}
+
+function markKafeel(ptName, kName) {
+  const monthKey = currentMonth;
+  const ks = getKafeelState(ptName, kName);
+  const newVal = ks[monthKey] === 'yes' ? 'no' : 'yes';
+  updateKafeelState(ptName, kName, {[monthKey]: newVal});
+  toast(newVal === 'yes' ? `✓ تم تسجيل ${kName}` : `${kName} غير مدفوع`);
+}
+
+function fmt(n) {
+  return Math.round(n).toLocaleString('en-US').replace(/,/g,'٬').replace(/[0-9]/g, d => '٠١٢٣٤٥٦٧٨٩'[d]);
+}
+
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+function monthOptions(selected) {
+  const years = [2026, 2027];
+  let opts = '<option value="">— اختاري —</option>';
+  years.forEach(y => MONTH_NAMES_AR.forEach(m => {
+    const val = `${m} ${y}`;
+    opts += `<option value="${val}" ${val===selected?'selected':''}>${val}</option>`;
+  }));
+  return opts;
+}
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2500);
+}
+
+function showHelp() { document.getElementById('helpModal').classList.add('show'); }
+function closeHelp() { document.getElementById('helpModal').classList.remove('show'); }
+window.showHelp = showHelp;
+window.closeHelp = closeHelp;
+window.switchMonth = switchMonth;
+window.setFilter = setFilter;
+
+function shareProgress() {
+  let doneSep=0,doneOct=0,totSep=0,totOct=0,countSep=0,countOct=0;
+  DATA.forEach(pt => {
+    totSep += pt.sep; totOct += pt.oct;
+    if (ptStatus(pt, SEP_VAL)==='done') { doneSep += pt.sep; countSep++; }
+    if (ptStatus(pt, OCT_VAL)==='done') { doneOct += pt.oct; countOct++; }
+  });
+
+  const monthVal = currentMonth === 'sep' ? SEP_VAL : OCT_VAL;
+  const pending = [];
+  DATA.forEach(pt => {
+    const status = ptStatus(pt, monthVal);
+    const amt = currentMonth==='sep' ? pt.sep : pt.oct;
+    if (status !== 'done' && amt > 0) pending.push(`• ${pt.pt}: ${fmt(amt)}`);
+  });
+
+  const monthLabel = currentMonth==='sep' ? 'سبتمبر' : 'أكتوبر';
+  const total = currentMonth==='sep' ? totSep : totOct;
+  const collected = currentMonth==='sep' ? doneSep : doneOct;
+  const count = currentMonth==='sep' ? countSep : countOct;
+
+  const text = `📊 ملخص تحصيل ${monthLabel} ٢٠٢٦
+
+✅ محصّل: ${fmt(collected)} جنيه
+⏳ متبقي: ${fmt(total-collected)} جنيه
+📦 المجموعات: ${count} / ${DATA.length}
+
+${pending.length>0 ? '🔸 المتبقي:\n' + pending.slice(0,15).join('\n') + (pending.length>15?`\n... و${pending.length-15} أخرى`:'') : '🎉 كل التحصيل مكتمل!'}
+
+جزاكم الله خيراً 🌿`;
+
+  document.getElementById('summaryText').textContent = text;
+  document.getElementById('summaryModal').classList.add('show');
+  window._shareText = text;
+}
+
+function closeSummary() { document.getElementById('summaryModal').classList.remove('show'); }
+window.closeSummary = closeSummary;
+window.shareProgress = shareProgress;
+
+function sendWhatsApp() {
+  const url = 'https://wa.me/?text=' + encodeURIComponent(window._shareText);
+  window.open(url, '_blank');
+}
+window.sendWhatsApp = sendWhatsApp;
+</script>
+</body>
+</html>
