@@ -237,6 +237,7 @@ body{padding-bottom:env(safe-area-inset-bottom)}
   <div class="emoji">🌿</div>
   <h2>أهلاً نشوى</h2>
   <p>اختاري الشهر، ثم اضغطي على المجموعة لتفتح. يمكنكِ تسجيل الدفع للمجموعة كاملة، أو لكل كفيل منفرد، أو حتى لفترة مقدمة. كل شيء يُحفظ تلقائياً.</p>
+  <p style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px"><strong>ملاحظة:</strong> هذا التطبيق مخصص لتسجيل التحصيل فقط 💰<br>الزيادات والصدقات والتعديلات على الكفالات نتابعها بشكل منفصل.</p>
 </div>
 
 <div class="month-tabs">
@@ -845,7 +846,7 @@ function makeCard(pt, status, amt) {
       </div>
       ${pt.sadaqat>0 ? renderSadaqat(pt) : ''}
       <div class="kafeel-list">
-        ${pt.kafeels.map(k => renderKafeel(pt, k)).join('')}
+        ${renderKafeels(pt)}
       </div>
     </div>
   `;
@@ -1013,6 +1014,34 @@ function renderSadaqat(pt) {
       </div>
     </div>
   `;
+}
+
+function renderKafeels(pt) {
+  // If PT has only one active sub-kafeel with the same name as the PT itself,
+  // don't show the duplicate sub-row (the PT-level controls cover it)
+  const activeKafeels = pt.kafeels.filter(k => {
+    const amt = currentMonth==='sep' ? k.sep : k.oct;
+    const hasPrepaid = k.prepaid && k.prepaid.length > 0;
+    return amt > 0 || hasPrepaid;
+  });
+
+  // Hide duplicate self-sub-sponsor: when there's exactly 1 active kafeel matching the PT name
+  // and no sadaqat (sadaqat row is a separate thing)
+  const hasOnlySelfKafeel = activeKafeels.length === 1 &&
+                             activeKafeels[0].name.trim() === pt.pt.trim() &&
+                             (!activeKafeels[0].prepaid || activeKafeels[0].prepaid.length === 0);
+
+  if (hasOnlySelfKafeel) {
+    // Don't render the sub-row — PT controls are sufficient
+    // But still render any truly-prepaid rows (📌)
+    const prepaidOnlyRows = pt.kafeels.filter(k => {
+      const amt = currentMonth==='sep' ? k.sep : k.oct;
+      return amt === 0 && k.prepaid && k.prepaid.length > 0;
+    });
+    return prepaidOnlyRows.map(k => renderKafeel(pt, k)).join('');
+  }
+
+  return pt.kafeels.map(k => renderKafeel(pt, k)).join('');
 }
 
 function renderKafeel(pt, k) {
