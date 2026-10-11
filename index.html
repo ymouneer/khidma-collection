@@ -205,6 +205,39 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 
 <div class="toast" id="toast"></div>
 
+<div class="modal" id="confirmModal">
+  <div class="modal-content">
+    <div class="modal-handle"></div>
+    <div class="modal-title">تأكيد التسجيل 🌿</div>
+    <div class="modal-text" id="confirmText" style="text-align:center;font-size:16px;line-height:1.8">...</div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-secondary" onclick="closeConfirm()">إلغاء</button>
+      <button class="modal-btn modal-btn-primary" onclick="proceedConfirm()">نعم، أؤكد ✓</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="noCloudModal">
+  <div class="modal-content">
+    <div class="modal-handle"></div>
+    <div class="modal-title">⚠️ لا يوجد اتصال بالسحابة</div>
+    <div class="modal-text" style="text-align:center;line-height:1.8">
+التطبيق غير متصل بالسحابة الآن.
+
+لحمايةِ بياناتك، لن يُسمح بأي تعديل حتى يعود الاتصال.
+
+يُرجى:
+• التحقق من الإنترنت
+• إعادة تحميل الصفحة (اسحبي الصفحة لأسفل)
+
+بعد عودة الاتصال ستظهر علامة ☁️ "محفوظ" في الأعلى، ويمكنكِ التعديل بأمان.
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-primary" onclick="closeNoCloudModal()">تمام</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="helpModal">
   <div class="modal-content">
     <div class="modal-handle"></div>
@@ -255,7 +288,7 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 <!-- Firebase SDK -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+import { getDatabase, ref, set, onValue, update, goOnline, goOffline } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAEQBtH17bSQlQB4yo_GpafON-zVYPhSOU",
@@ -288,10 +321,12 @@ let state = {};
 let saveTimer = null;
 let firebaseReady = false;
 let syncingFromCloud = false;
+let cloudConnected = false;
+let pendingAction = null;
 
 window.addEventListener('firebase-ready', () => { firebaseReady = true; init(); });
-// Fallback if firebase fails to load in 3s
-setTimeout(() => { if (!firebaseReady) { console.warn('Firebase timeout'); init(); } }, 3000);
+// Fallback if firebase fails to load in 5s
+setTimeout(() => { if (!firebaseReady) { console.warn('Firebase timeout'); init(); } }, 5000);
 
 async function init() {
   DATA = window.EMBEDDED_DATA || [];
@@ -314,7 +349,17 @@ async function init() {
         setCloudStatus('ok', 'متصل ☁️');
       }, (error) => {
         console.warn('Firebase read error:', error);
-        setCloudStatus('offline', 'محفوظ محلياً');
+        setCloudStatus('offline', 'غير متصل ✗');
+      });
+
+      // Monitor connection
+      const connectedRef = ref(db, '.info/connected');
+      onValue(connectedRef, (snap) => {
+        if (snap.val() === true) {
+          setCloudStatus('ok', 'متصل ☁️');
+        } else {
+          setCloudStatus('offline', 'غير متصل ✗');
+        }
       });
     } catch(e) {
       console.warn('Firebase init failed:', e);
@@ -332,10 +377,46 @@ function setCloudStatus(status, text) {
   const el = document.getElementById('cloudStatus');
   const t = document.getElementById('cloudText');
   el.classList.remove('offline', 'saving');
-  if (status === 'offline') el.classList.add('offline');
+  if (status === 'offline') { el.classList.add('offline'); cloudConnected = false; }
+  else if (status === 'ok') { cloudConnected = true; }
   if (status === 'saving') el.classList.add('saving');
   t.textContent = text;
 }
+
+function requireCloud() {
+  if (!cloudConnected) {
+    showNoCloudModal();
+    return false;
+  }
+  return true;
+}
+
+function confirmAction(message, callback) {
+  pendingAction = callback;
+  document.getElementById('confirmText').textContent = message;
+  document.getElementById('confirmModal').classList.add('show');
+}
+
+function closeConfirm() {
+  pendingAction = null;
+  document.getElementById('confirmModal').classList.remove('show');
+}
+
+function proceedConfirm() {
+  const cb = pendingAction;
+  closeConfirm();
+  if (cb) cb();
+}
+window.closeConfirm = closeConfirm;
+window.proceedConfirm = proceedConfirm;
+
+function showNoCloudModal() {
+  document.getElementById('noCloudModal').classList.add('show');
+}
+function closeNoCloudModal() {
+  document.getElementById('noCloudModal').classList.remove('show');
+}
+window.closeNoCloudModal = closeNoCloudModal;
 
 function loadLocalState() {
   try {
@@ -368,8 +449,10 @@ function saveState() {
       setTimeout(() => { syncingFromCloud = false; }, 200);
     } catch(e) {
       console.warn('Cloud save failed:', e);
-      setCloudStatus('offline', 'محفوظ محلياً');
+      setCloudStatus('offline', 'فشل الحفظ ✗');
       syncingFromCloud = false;
+      // Alert user that save failed
+      toast('⚠️ فشل الحفظ — سيُعاد المحاولة');
     }
   }, 500);
 }
@@ -562,48 +645,97 @@ function makeCard(pt, status, amt) {
   card.querySelectorAll('[data-pt-mark]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      markPt(pt, btn.dataset.ptMark);
+      if (!requireCloud()) return;
+      const status = btn.dataset.ptMark;
+      const monthLabel = currentMonth==='sep' ? 'سبتمبر' : 'أكتوبر';
+      const msg = status==='yes' 
+        ? `هل تؤكدين تسجيل "${pt.pt}" كمدفوعة بالكامل لـ ${monthLabel}؟`
+        : `هل تؤكدين تسجيل "${pt.pt}" كغير مدفوعة لـ ${monthLabel}؟`;
+      confirmAction(msg, () => markPt(pt, status));
     });
   });
-
+  
   const ptUntil = card.querySelector('[data-pt-until]');
-  if (ptUntil) ptUntil.addEventListener('change', () => {
-    updatePtState(pt.pt, {paid_until: ptUntil.value || null});
-    if (ptUntil.value) toast('✓ تم تسجيل دفع المجموعة مقدماً حتى ' + ptUntil.value);
-  });
+  if (ptUntil) {
+    const origPtUntil = ptUntil.value;
+    ptUntil.addEventListener('change', () => {
+      if (!requireCloud()) { ptUntil.value = origPtUntil; return; }
+      const newVal = ptUntil.value;
+      const msg = newVal 
+        ? `هل تؤكدين أن "${pt.pt}" مدفوعة مقدماً حتى ${newVal}؟`
+        : `هل تريدين إزالة تاريخ الدفع المسبق لـ "${pt.pt}"؟`;
+      confirmAction(msg, () => {
+        updatePtState(pt.pt, {paid_until: newVal || null});
+        if (newVal) toast('✓ المجموعة مدفوعة مقدماً حتى ' + newVal);
+      });
+    });
+  }
 
   card.querySelectorAll('[data-sadaqat-mark]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (!requireCloud()) return;
       const key = currentMonth;
       const sdq = s.sadaqat || {};
       const newVal = sdq[key] === 'yes' ? 'no' : 'yes';
-      const newSdq = {...sdq, [key]: newVal};
-      updatePtState(pt.pt, {sadaqat: newSdq});
+      const monthLabel = currentMonth==='sep' ? 'سبتمبر' : 'أكتوبر';
+      const msg = newVal==='yes'
+        ? `هل تؤكدين دفع الصدقات الثابتة (${fmt(pt.sadaqat)}) لـ ${monthLabel}؟`
+        : `هل تؤكدين أن الصدقات غير مدفوعة لـ ${monthLabel}؟`;
+      confirmAction(msg, () => {
+        const newSdq = {...sdq, [key]: newVal};
+        updatePtState(pt.pt, {sadaqat: newSdq});
+      });
     });
   });
-
+  
   const sdqUntil = card.querySelector('[data-sadaqat-until]');
-  if (sdqUntil) sdqUntil.addEventListener('change', () => {
-    const sdq = s.sadaqat || {};
-    const newSdq = {...sdq, paid_until: sdqUntil.value || null};
-    updatePtState(pt.pt, {sadaqat: newSdq});
-    if (sdqUntil.value) toast('✓ الصدقات مدفوعة مقدماً حتى ' + sdqUntil.value);
-  });
-
+  if (sdqUntil) {
+    const origSdqUntil = sdqUntil.value;
+    sdqUntil.addEventListener('change', () => {
+      if (!requireCloud()) { sdqUntil.value = origSdqUntil; return; }
+      const newVal = sdqUntil.value;
+      const msg = newVal 
+        ? `هل تؤكدين أن الصدقات مدفوعة مقدماً حتى ${newVal}؟`
+        : `إزالة تاريخ الدفع المسبق للصدقات؟`;
+      confirmAction(msg, () => {
+        const sdq2 = s.sadaqat || {};
+        const newSdq = {...sdq2, paid_until: newVal || null};
+        updatePtState(pt.pt, {sadaqat: newSdq});
+        if (newVal) toast('✓ الصدقات مدفوعة مقدماً حتى ' + newVal);
+      });
+    });
+  }
+  
   card.querySelectorAll('[data-k-mark]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const kName = btn.dataset.kMark;
-      markKafeel(pt.pt, kName);
+      if (!requireCloud()) return;
+      const kName = decodeURIComponent(btn.dataset.kMark);
+      const ks = getKafeelState(pt.pt, kName);
+      const monthKey = currentMonth;
+      const newVal = ks[monthKey] === 'yes' ? 'no' : 'yes';
+      const monthLabel = currentMonth==='sep' ? 'سبتمبر' : 'أكتوبر';
+      const msg = newVal==='yes'
+        ? `هل تؤكدين دفع "${kName}" لـ ${monthLabel}؟`
+        : `هل تؤكدين أن "${kName}" غير مدفوع لـ ${monthLabel}؟`;
+      confirmAction(msg, () => markKafeel(pt.pt, kName));
     });
   });
-
+  
   card.querySelectorAll('[data-k-until]').forEach(sel => {
+    const origValue = sel.value;
     sel.addEventListener('change', () => {
-      const kName = sel.dataset.kUntil;
-      updateKafeelState(pt.pt, kName, {paid_until: sel.value || null});
-      if (sel.value) toast(`✓ ${kName} مدفوع حتى ${sel.value}`);
+      if (!requireCloud()) { sel.value = origValue; return; }
+      const kName = decodeURIComponent(sel.dataset.kUntil);
+      const newVal = sel.value;
+      const msg = newVal 
+        ? `هل تؤكدين أن "${kName}" مدفوع مقدماً حتى ${newVal}؟`
+        : `إزالة تاريخ الدفع المسبق لـ "${kName}"؟`;
+      confirmAction(msg, () => {
+        updateKafeelState(pt.pt, kName, {paid_until: newVal || null});
+        if (newVal) toast(`✓ ${kName} مدفوع حتى ${newVal}`);
+      });
     });
   });
 
