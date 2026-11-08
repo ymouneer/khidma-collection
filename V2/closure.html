@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>إقفال الشهر — v2</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+  .stepper { display: flex; gap: 6px; margin-bottom: 24px; flex-wrap: wrap; }
+  .step-btn {
+    padding: 9px 16px; border-radius: var(--r-sm); background: #fff;
+    color: var(--muted); border: 1px solid var(--border);
+    cursor: pointer; font-size: 13px; font-weight: 500;
+    display: flex; align-items: center; gap: 8px;
+    transition: all var(--t-fast);
+  }
+  .step-btn .num {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--cream-deep);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 11px; color: var(--muted);
+  }
+  .step-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .step-btn.active .num { background: rgba(255,255,255,0.25); color: #fff; }
+  .step-btn.done .num { background: var(--success); color: #fff; }
+  .step-btn.done { color: var(--success); border-color: var(--success-light); }
+
+  .step-panel { display: none; animation: fadeIn 200ms; }
+  .step-panel.active { display: block; }
+
+  .nav-row {
+    display: flex; justify-content: space-between; margin-top: 20px; gap: 10px;
+  }
+
+  .pool-flow {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 20px; background: var(--cream-deep); border-radius: var(--r);
+  }
+  .pool-arrow {
+    font-size: 24px; color: var(--gold); line-height: 1;
+  }
+
+  .area-row {
+    display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr;
+    gap: 12px; padding: 14px 16px;
+    border-bottom: 1px solid var(--border-light);
+    align-items: center;
+  }
+  .area-row.header {
+    background: var(--cream-deep); font-weight: 700; font-size: 12px;
+    color: var(--accent); text-transform: uppercase; letter-spacing: 0.02em;
+  }
+  .area-row input { max-width: 140px; }
+
+  .final-total {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+    color: #fff; padding: 20px 24px; border-radius: var(--r-lg);
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+    margin: 20px 0;
+  }
+  .final-total .box { text-align: center; }
+  .final-total .label { font-size: 12px; opacity: 0.8; margin-bottom: 4px; }
+  .final-total .value { font-size: 28px; font-weight: 800; font-feature-settings: "tnum"; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>📊 إقفال الشهر</h1>
+  <div class="right">
+    <a href="home.html">الرئيسية</a>
+    <a href="admin.html" class="hide-mobile">إدارة</a>
+    <a href="reports.html" class="hide-mobile">تقارير</a>
+    <a href="backups.html" class="hide-mobile">النسخ</a>
+    <a onclick="createFullBackup()" class="btn-backup">💾 Backup</a>
+    <span class="logout" onclick="logout()">خروج</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="card card-tight flex-between">
+    <div>
+      <div class="text-xs text-muted">الشهر</div>
+      <h2 style="margin:0;color:var(--accent)" id="monthLabel">—</h2>
+    </div>
+    <div class="flex gap">
+      <label style="margin:0">تغيير:</label>
+      <input type="text" id="monthInput" value="2026-11" style="width:120px" onchange="changeMonth()">
+    </div>
+  </div>
+
+  <div class="stepper">
+    <button class="step-btn active" data-step="1" onclick="goStep(1)"><span class="num">١</span> الحالة</button>
+    <button class="step-btn" data-step="2" onclick="goStep(2)"><span class="num">٢</span> الصدقات والزكاة</button>
+    <button class="step-btn" data-step="3" onclick="goStep(3)"><span class="num">٣</span> بركة الصدقات</button>
+    <button class="step-btn" data-step="4" onclick="goStep(4)"><span class="num">٤</span> توزيع الزكاة</button>
+    <button class="step-btn" data-step="5" onclick="goStep(5)"><span class="num">٥</span> خطة التحويل</button>
+    <button class="step-btn" data-step="6" onclick="goStep(6)"><span class="num">٦</span> المراجعة والإقفال</button>
+  </div>
+
+  <!-- STEP 1 -->
+  <div class="step-panel active" id="step1">
+    <div class="card">
+      <h3 style="margin-top:0">ملخص الحالة</h3>
+      <div class="stats" id="step1Stats"></div>
+    </div>
+    <div class="card">
+      <h3>التعديلات المطبّقة هذا الشهر</h3>
+      <div id="step1Edits"></div>
+    </div>
+    <div class="nav-row">
+      <div></div>
+      <button onclick="goStep(2)">التالي ←</button>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step-panel" id="step2">
+    <div class="card">
+      <h3 style="margin-top:0">ما معاكم من صدقات وزكاة هذا الشهر</h3>
+      <div class="form-row">
+        <div>
+          <label>المبلغ الكلي عند نشوى (صدقات + زكاة)</label>
+          <input type="number" id="nashwa_total" value="0" oninput="recalc()">
+          <div class="text-xs text-muted mt-sm">يشمل: زكاة مال + زكاة فطر + صدقات إضافية</div>
+        </div>
+        <div>
+          <label>الإدخال الثابت للصدقات</label>
+          <input type="number" id="fixed_sadaqat" value="4550" oninput="recalc()">
+          <div class="text-xs text-muted mt-sm">نورا + إجلال + داليا = ٤,٥٥٠</div>
+        </div>
+      </div>
+      <div style="padding:14px;background:var(--warn-light);border-right:4px solid var(--warn);border-radius:var(--r-sm);color:#6d4e00;font-size:13px">
+        المبلغ عند نشوى يُقسَّم تلقائياً في الخطوة التالية: جزء لسد عجز بركة الصدقات + الباقي للزكاة.
+      </div>
+    </div>
+    <div class="nav-row">
+      <button class="btn-ghost" onclick="goStep(1)">→ السابق</button>
+      <button onclick="goStep(3)">التالي ←</button>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step-panel" id="step3">
+    <div class="card">
+      <h3 style="margin-top:0">بركة الصدقات</h3>
+      <div id="sadaqatPool"></div>
+    </div>
+    <div class="nav-row">
+      <button class="btn-ghost" onclick="goStep(2)">→ السابق</button>
+      <button onclick="goStep(4)">التالي ←</button>
+    </div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="step-panel" id="step4">
+    <div class="card">
+      <h3 style="margin-top:0">توزيع الزكاة على الأمهات</h3>
+      <div id="zakatStats"></div>
+      <div class="toolbar mt">
+        <div>
+          <label>حصة الأم (جنيه)</label>
+          <input type="number" id="zakat_share" value="300" style="width:120px" onchange="distributeAuto()">
+        </div>
+        <button class="btn-small" onclick="distributeAuto()">⚡ توزيع تلقائي</button>
+        <button class="btn-small btn-ghost" onclick="clearZakat()">مسح الكل</button>
+        <div class="spacer"></div>
+      </div>
+      <div class="table-wrap" style="max-height:55vh">
+        <table>
+          <thead><tr>
+            <th>المنطقة</th>
+            <th>الأم / ولي الأمر</th>
+            <th>الأساسي الحالي</th>
+            <th>زكاة (جنيه)</th>
+          </tr></thead>
+          <tbody id="zakatDist"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="nav-row">
+      <button class="btn-ghost" onclick="goStep(3)">→ السابق</button>
+      <button onclick="goStep(5)">التالي ←</button>
+    </div>
+  </div>
+
+  <!-- STEP 5 -->
+  <div class="step-panel" id="step5">
+    <div class="card">
+      <h3 style="margin-top:0">خطة التحويل</h3>
+      <p class="text-muted text-sm">املأ نصيبك من كل منطقة (اللي بيستلم كفلاءك مباشرة). نشوى تاخد الباقي.</p>
+      <div id="transferPlan"></div>
+    </div>
+    <div class="card card-tight">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input type="checkbox" id="include_fee" checked onchange="recalc()" style="width:auto">
+        <span><b>إضافة ١٪ رسوم تحصيل على كفر علو</b></span>
+      </label>
+      <div class="text-sm text-muted mt-sm" id="feeInfo"></div>
+    </div>
+    <div class="nav-row">
+      <button class="btn-ghost" onclick="goStep(4)">→ السابق</button>
+      <button onclick="goStep(6)">التالي ←</button>
+    </div>
+  </div>
+
+  <!-- STEP 6 -->
+  <div class="step-panel" id="step6">
+    <div class="card">
+      <h3 style="margin-top:0">المراجعة النهائية</h3>
+      <div id="finalReview"></div>
+      <div class="final-total" id="grandTotals"></div>
+    </div>
+    <div class="card" id="validationBox" style="display:none"></div>
+    <div class="nav-row">
+      <button class="btn-ghost" onclick="goStep(5)">→ السابق</button>
+      <div class="flex gap">
+        <button class="btn-secondary" onclick="saveDraft()">💾 حفظ مسودة</button>
+        <button class="btn-gold btn-lg" onclick="closeMonth()">🔒 إقفال الشهر</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="modalContainer"></div>
+
+<script src="config.js"></script>
+<script>
+if (!checkAuth()) throw new Error('auth');
+initFirebase();
+
+let CURRENT_MONTH = '2026-11';
+let allKafalat = {}, allPeople = {}, config = {}, pendingEdits = [];
+let state = {
+  nashwa_total: 0,
+  fixed_sadaqat: 4550,
+  zakat_share: 300,
+  zakat_distribution: {},
+  youssef_by_area: {'الصف':0, 'كفر_علو':0, 'المعصرة':0, 'أماكن_أخرى':0},
+  include_fee: true
+};
+
+function changeMonth() {
+  CURRENT_MONTH = document.getElementById('monthInput').value;
+  load();
+}
+
+async function load() {
+  [allPeople, allKafalat, config] = await Promise.all([fetchPeople(), fetchKafalat(), fetchConfig()]);
+  const eSnap = await ref(`months/${CURRENT_MONTH}/edits`).once('value');
+  pendingEdits = Object.entries(eSnap.val() || {}).map(([id,e]) => ({id,...e}));
+  const sSnap = await ref(`months/${CURRENT_MONTH}/closure_state`).once('value');
+  if (sSnap.exists()) state = {...state, ...sSnap.val()};
+
+  document.getElementById('monthLabel').textContent = arabicMonth(CURRENT_MONTH);
+  document.getElementById('nashwa_total').value = state.nashwa_total;
+  document.getElementById('fixed_sadaqat').value = state.fixed_sadaqat;
+  document.getElementById('zakat_share').value = state.zakat_share;
+  document.getElementById('include_fee').checked = state.include_fee;
+
+  recalc();
+  renderStep1();
+}
+
+// ========== CORE COMPUTATION ==========
+
+function effectiveKafalat() {
+  // Apply pending edits to kafalat for this month's view
+  const result = JSON.parse(JSON.stringify(allKafalat));
+  pendingEdits.forEach(e => {
+    if (e.type === 'kafala_new' && e.after) {
+      result[e.target_id] = e.after;
+    } else if (e.type === 'kafala_update' && result[e.target_id]) {
+      Object.assign(result[e.target_id], e.after);
+    } else if (e.type === 'funding_add' && result[e.target_id]) {
+      result[e.target_id].funding = result[e.target_id].funding || [];
+      result[e.target_id].funding.push(e.after);
+    } else if (e.type === 'funding_update' && result[e.target_id]) {
+      const idx = (result[e.target_id].funding||[]).findIndex(f => f.fid === e.sub_id);
+      if (idx >= 0) Object.assign(result[e.target_id].funding[idx], e.after);
+    } else if (e.type === 'funding_remove' && result[e.target_id]) {
+      result[e.target_id].funding = (result[e.target_id].funding||[]).filter(f => f.fid !== e.sub_id);
+    } else if (e.type === 'oneoff' && result[e.target_id]) {
+      // One-off ziyada: temporarily add to total for this month only
+      const amt = (e.after && e.after.amount) || e.amount || 0;
+      result[e.target_id]._oneoff = (result[e.target_id]._oneoff||0) + amt;
+    }
+  });
+  return result;
+}
+
+function fundingNeedsPaymentThisMonth(f, ym) {
+  // Returns true if this funding source needs payment for the given month
+  if (f.prepaid_through && f.prepaid_through >= ym) return false;
+  return true;
+}
+
+function kafalaMonthlyBase(kafala, ym) {
+  // Only funding sources that need payment this month
+  if (kafala.status !== 'active') return 0;
+  return (kafala.funding || []).reduce((s, f) => {
+    return s + (fundingNeedsPaymentThisMonth(f, ym) ? (f.amount||0) : 0);
+  }, 0);
+}
+
+function sadaqatPoolOutput(ym) {
+  // Sum of amounts from all funding sources where source=sadaqat and not prepaid
+  const effective = effectiveKafalat();
+  let total = 0;
+  Object.values(effective).forEach(k => {
+    if (k.status !== 'active') return;
+    (k.funding || []).forEach(f => {
+      if (f.source === 'sadaqat' && fundingNeedsPaymentThisMonth(f, ym)) {
+        total += f.amount || 0;
+      }
+    });
+  });
+  return total;
+}
+
+function recalc() {
+  state.nashwa_total = parseFloat(document.getElementById('nashwa_total').value) || 0;
+  state.fixed_sadaqat = parseFloat(document.getElementById('fixed_sadaqat').value) || 0;
+  state.zakat_share = parseFloat(document.getElementById('zakat_share').value) || 300;
+  state.include_fee = document.getElementById('include_fee').checked;
+
+  const output = sadaqatPoolOutput(CURRENT_MONTH);
+  const shortage = Math.max(0, output - state.fixed_sadaqat);
+  state.sadaqat_to_pool = Math.min(shortage, state.nashwa_total);
+  state.zakat_remaining = state.nashwa_total - state.sadaqat_to_pool;
+
+  renderStep3();
+  renderStep4();
+  renderStep5();
+  renderStep6();
+}
+
+function computeAreaTotals() {
+  const effective = effectiveKafalat();
+  const areas = {};
+  const needyGuardians = {}; // guardian_id → base needs (for zakat distribution context)
+
+  Object.entries(effective).forEach(([id, k]) => {
+    if (k.status !== 'active') return;
+    const monthBase = kafalaMonthlyBase(k, CURRENT_MONTH);
+    const area = k.area;
+    if (!areas[area]) areas[area] = {base: 0, oneoff: 0, zakat: 0};
+    areas[area].base += monthBase;
+    areas[area].oneoff += (k._oneoff || 0);
+
+    const gid = k.guardian_id;
+    if (gid) {
+      if (!needyGuardians[gid]) needyGuardians[gid] = {area, total: 0};
+      needyGuardians[gid].total += monthBase;
+    }
+  });
+
+  // Add zakat distributions by area
+  Object.entries(state.zakat_distribution || {}).forEach(([gid, amt]) => {
+    const g = needyGuardians[gid];
+    if (g) {
+      if (!areas[g.area]) areas[g.area] = {base: 0, oneoff: 0, zakat: 0};
+      areas[g.area].zakat += amt;
+    }
+  });
+
+  Object.keys(areas).forEach(a => {
+    areas[a].total = areas[a].base + areas[a].oneoff + areas[a].zakat;
+  });
+  return {areas, needyGuardians};
+}
+
+// ========== RENDERERS ==========
+
+function renderStep1() {
+  const effective = effectiveKafalat();
+  const active = Object.values(effective).filter(k => k.status === 'active');
+  const byArea = {};
+  let totalBase = 0, prepaidActive = 0;
+
+  active.forEach(k => {
+    const mb = kafalaMonthlyBase(k, CURRENT_MONTH);
+    byArea[k.area] = (byArea[k.area]||0) + mb;
+    totalBase += mb;
+    if (hasAnyPrepaid(k, CURRENT_MONTH)) prepaidActive++;
+  });
+
+  document.getElementById('step1Stats').innerHTML = `
+    <div class="stat stat-accent">
+      <div class="label">الكفالات النشطة</div>
+      <div class="value">${active.length}</div>
+    </div>
+    <div class="stat">
+      <div class="label">المطلوب هذا الشهر</div>
+      <div class="value">${fmt(totalBase)}</div>
+      <div class="sub">بعد استبعاد المدفوع مقدماً</div>
+    </div>
+    <div class="stat"><div class="label">الصف</div><div class="value">${fmt(byArea['الصف']||0)}</div></div>
+    <div class="stat"><div class="label">كفر علو</div><div class="value">${fmt(byArea['كفر_علو']||0)}</div></div>
+    <div class="stat"><div class="label">المعصرة</div><div class="value">${fmt(byArea['المعصرة']||0)}</div></div>
+    <div class="stat"><div class="label">أماكن أخرى</div><div class="value">${fmt(byArea['أماكن_أخرى']||0)}</div></div>
+    <div class="stat"><div class="label">مدفوعة مقدماً</div><div class="value">${prepaidActive}</div></div>
+    <div class="stat"><div class="label">تعديلات</div><div class="value">${pendingEdits.length}</div></div>
+  `;
+
+  const edits = document.getElementById('step1Edits');
+  if (pendingEdits.length === 0) {
+    edits.innerHTML = '<div class="text-muted" style="padding:30px;text-align:center">لا توجد تعديلات هذا الشهر</div>';
+  } else {
+    edits.innerHTML = `<table><thead><tr><th>النوع</th><th>الهدف</th><th>التفاصيل</th><th>الوقت</th></tr></thead><tbody>
+      ${pendingEdits.map(e => `<tr>
+        <td><span class="badge">${e.type}</span></td>
+        <td>${e.target_label||'—'}</td>
+        <td class="text-sm text-muted">${e.description||''}</td>
+        <td class="text-xs text-muted">${new Date(e.ts).toLocaleString('ar-EG')}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+}
+
+function renderStep3() {
+  const output = sadaqatPoolOutput(CURRENT_MONTH);
+  const totalIn = state.fixed_sadaqat + (state.sadaqat_to_pool||0);
+  const diff = totalIn - output;
+
+  document.getElementById('sadaqatPool').innerHTML = `
+    <div class="pool-flow">
+      <div style="text-align:center">
+        <div class="text-xs text-muted" style="margin-bottom:4px">المخرجات (البركة تحتاج)</div>
+        <div style="font-size:30px;font-weight:800;color:var(--accent)" class="font-mono">${fmt(output)}</div>
+        <div class="text-xs text-muted">مجموع كفالات مصدر="صدقات"</div>
+      </div>
+      <div class="pool-arrow">⬇</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;width:100%">
+        <div class="stat"><div class="label">إدخال ثابت</div><div class="value">${fmt(state.fixed_sadaqat)}</div><div class="sub">نورا + إجلال + داليا</div></div>
+        <div class="stat"><div class="label">من مبلغ نشوى</div><div class="value">${fmt(state.sadaqat_to_pool||0)}</div><div class="sub">لسد العجز</div></div>
+        <div class="stat stat-accent"><div class="label">إجمالي المدخلات</div><div class="value">${fmt(totalIn)}</div></div>
+      </div>
+      <div class="pool-arrow">⬇</div>
+      ${diff >= 0 ?
+        `<div style="padding:16px 20px;background:var(--success-light);border-right:4px solid var(--success);border-radius:var(--r);color:var(--success);font-weight:600">
+          ✓ البركة مغطاة ${diff>0?`(فائض ${fmt(diff)})`:''}
+        </div>` :
+        `<div style="padding:16px 20px;background:var(--warn-light);border-right:4px solid var(--warn);border-radius:var(--r);color:#6d4e00;font-weight:600">
+          ⚠️ عجز بمقدار ${fmt(-diff)} - مبلغ نشوى غير كافي
+        </div>`
+      }
+    </div>
+    <div class="card card-tight mt" style="background:var(--cream-deep)">
+      <div class="text-sm"><b>الباقي للزكاة:</b> <span class="font-mono" style="font-size:18px;color:var(--accent)">${fmt(state.zakat_remaining||0)}</span> جنيه</div>
+    </div>
+  `;
+}
+
+function renderStep4() {
+  const {needyGuardians} = computeAreaTotals();
+  const distributed = Object.values(state.zakat_distribution||{}).reduce((a,b)=>a+b,0);
+
+  document.getElementById('zakatStats').innerHTML = `<div class="stats">
+    <div class="stat"><div class="label">المتاح للتوزيع</div><div class="value">${fmt(state.zakat_remaining||0)}</div></div>
+    <div class="stat stat-accent"><div class="label">الموزع</div><div class="value">${fmt(distributed)}</div></div>
+    <div class="stat"><div class="label">المتبقي</div><div class="value">${fmt((state.zakat_remaining||0) - distributed)}</div></div>
+    <div class="stat"><div class="label">عدد الأمهات</div><div class="value">${Object.keys(state.zakat_distribution||{}).length}</div></div>
+  </div>`;
+
+  const guardians = Object.entries(needyGuardians).map(([gid, info]) => ({gid, ...info}))
+    .sort((a,b) => a.total - b.total);
+
+  const dist = state.zakat_distribution || {};
+  document.getElementById('zakatDist').innerHTML = guardians.map(g => {
+    const p = allPeople[g.gid];
+    const name = p ? p.name : '—';
+    const amt = dist[g.gid] || 0;
+    return `<tr>
+      <td><span class="badge">${areaDisplay(g.area)}</span></td>
+      <td>${name}</td>
+      <td class="font-mono">${fmt(g.total)}</td>
+      <td><input type="number" value="${amt}" data-gid="${g.gid}" oninput="updateZakat(this)" style="width:100px;text-align:center"></td>
+    </tr>`;
+  }).join('');
+}
+
+function distributeAuto() {
+  const {needyGuardians} = computeAreaTotals();
+  state.zakat_share = parseFloat(document.getElementById('zakat_share').value) || 300;
+  const guardians = Object.entries(needyGuardians).map(([gid, info]) => ({gid, ...info}))
+    .sort((a,b) => a.total - b.total);
+
+  state.zakat_distribution = {};
+  let remaining = state.zakat_remaining || 0;
+  for (const g of guardians) {
+    if (remaining < state.zakat_share) break;
+    state.zakat_distribution[g.gid] = state.zakat_share;
+    remaining -= state.zakat_share;
+  }
+  if (remaining > 0 && guardians.length) {
+    state.zakat_distribution[guardians[0].gid] = (state.zakat_distribution[guardians[0].gid]||0) + remaining;
+  }
+  renderStep4();
+  recalc();
+  toast(`✓ وُزّعت على ${Object.keys(state.zakat_distribution).length} أم`, 'success');
+}
+
+function clearZakat() {
+  state.zakat_distribution = {};
+  renderStep4();
+  recalc();
+}
+
+function updateZakat(input) {
+  const gid = input.dataset.gid;
+  const v = parseFloat(input.value) || 0;
+  if (v === 0) delete state.zakat_distribution[gid];
+  else state.zakat_distribution[gid] = v;
+  renderStep4();
+  recalc();
+}
+
+function renderStep5() {
+  const {areas} = computeAreaTotals();
+  const order = ['الصف','كفر_علو','المعصرة','أماكن_أخرى'];
+
+  let html = `<div class="area-row header">
+    <div>المنطقة</div><div>الإجمالي</div><div>نصيب يوسف</div><div>نصيب نشوى</div>
+  </div>`;
+
+  let yousTotal=0, nashTotal=0, grand=0;
+  order.forEach(a => {
+    const d = areas[a] || {base:0, oneoff:0, zakat:0, total:0};
+    const yous = state.youssef_by_area[a] || 0;
+    const nash = Math.max(0, d.total - yous);
+    yousTotal += yous; nashTotal += nash; grand += d.total;
+    html += `<div class="area-row">
+      <div>
+        <b>${areaDisplay(a)}</b>
+        <div class="text-xs text-muted">أساسي ${fmt(d.base)} + زيادات ${fmt(d.oneoff)} + زكاة ${fmt(d.zakat)}</div>
+      </div>
+      <div class="font-mono"><b>${fmt(d.total)}</b></div>
+      <div><input type="number" value="${yous}" data-area="${a}" oninput="updateYous(this)"></div>
+      <div class="font-mono">${fmt(nash)}</div>
+    </div>`;
+  });
+
+  // Fee for Kafr Olw
+  let feeHtml = '', feeAmount = 0;
+  if (state.include_fee) {
+    const kafrTotal = (areas['كفر_علو']?.total) || 0;
+    feeAmount = Math.round(kafrTotal * 0.01);
+    const yousKafr = state.youssef_by_area['كفر_علو']||0;
+    const nashKafr = Math.max(0, kafrTotal - yousKafr);
+    yousTotal += Math.round(yousKafr*0.01);
+    nashTotal += Math.round(nashKafr*0.01);
+    grand += feeAmount;
+    feeHtml = `<div>+${fmt(feeAmount)} جنيه (يوسف ${fmt(Math.round(yousKafr*0.01))} + نشوى ${fmt(Math.round(nashKafr*0.01))})</div>`;
+  } else {
+    feeHtml = `<div>بدون إضافة رسوم</div>`;
+  }
+
+  html += `<div class="final-total">
+    <div class="box"><div class="label">الإجمالي الكلي</div><div class="value">${fmt(grand)}</div></div>
+    <div class="box"><div class="label">يوسف</div><div class="value">${fmt(yousTotal)}</div></div>
+    <div class="box"><div class="label">نشوى</div><div class="value">${fmt(nashTotal)}</div></div>
+  </div>`;
+
+  document.getElementById('transferPlan').innerHTML = html;
+  document.getElementById('feeInfo').innerHTML = feeHtml;
+}
+
+function updateYous(input) {
+  state.youssef_by_area[input.dataset.area] = parseFloat(input.value) || 0;
+  renderStep5();
+  renderStep6();
+}
+
+function renderStep6() {
+  const {areas} = computeAreaTotals();
+  const order = ['الصف','كفر_علو','المعصرة','أماكن_أخرى'];
+  let yousTotal=0, nashTotal=0, grand=0;
+  const rows = order.map(a => {
+    const d = areas[a] || {total:0};
+    const yous = state.youssef_by_area[a]||0;
+    const nash = Math.max(0, d.total - yous);
+    yousTotal += yous; nashTotal += nash; grand += d.total;
+    return `<tr><td><b>${areaDisplay(a)}</b></td><td class="font-mono">${fmt(d.total)}</td><td class="font-mono">${fmt(yous)}</td><td class="font-mono">${fmt(nash)}</td></tr>`;
+  }).join('');
+
+  let feeRow = '';
+  if (state.include_fee) {
+    const kafrTotal = areas['كفر_علو']?.total || 0;
+    const fee = Math.round(kafrTotal*0.01);
+    const yousKafr = state.youssef_by_area['كفر_علو']||0;
+    const nashFee = Math.round(Math.max(0, kafrTotal-yousKafr)*0.01);
+    const yousFee = Math.round(yousKafr*0.01);
+    yousTotal += yousFee; nashTotal += nashFee; grand += fee;
+    feeRow = `<tr style="background:var(--cream-deep)"><td><b>رسوم ١٪ كفر علو</b></td><td class="font-mono">${fmt(fee)}</td><td class="font-mono">${fmt(yousFee)}</td><td class="font-mono">${fmt(nashFee)}</td></tr>`;
+  }
+
+  const zakatUsed = Object.values(state.zakat_distribution||{}).reduce((a,b)=>a+b,0);
+
+  document.getElementById('finalReview').innerHTML = `<table>
+    <thead><tr><th>المنطقة</th><th>الإجمالي</th><th>يوسف</th><th>نشوى</th></tr></thead>
+    <tbody>${rows}${feeRow}
+      <tr style="background:var(--accent);color:#fff;font-weight:700">
+        <td>الإجمالي</td>
+        <td class="font-mono">${fmt(grand)}</td>
+        <td class="font-mono">${fmt(yousTotal)}</td>
+        <td class="font-mono">${fmt(nashTotal)}</td>
+      </tr>
+    </tbody></table>
+    <div class="mt text-sm text-muted">
+      <div>• الشهر: <b>${arabicMonth(CURRENT_MONTH)}</b></div>
+      <div>• تعديلات مطبّقة: <b>${pendingEdits.length}</b></div>
+      <div>• من مبلغ نشوى للصدقات: <b>${fmt(state.sadaqat_to_pool||0)}</b></div>
+      <div>• الزكاة الموزعة: <b>${fmt(zakatUsed)}</b> على <b>${Object.keys(state.zakat_distribution||{}).length}</b> أم</div>
+    </div>
+  `;
+
+  document.getElementById('grandTotals').innerHTML = `
+    <div class="box"><div class="label">الإجمالي الكلي</div><div class="value">${fmt(grand)}</div></div>
+    <div class="box"><div class="label">يوسف</div><div class="value">${fmt(yousTotal)}</div></div>
+    <div class="box"><div class="label">نشوى</div><div class="value">${fmt(nashTotal)}</div></div>
+  `;
+
+  // Validation
+  const warnings = [];
+  if (Math.abs(zakatUsed - (state.zakat_remaining||0)) > 1) {
+    warnings.push(`الزكاة الموزعة (${fmt(zakatUsed)}) ≠ المتاح (${fmt(state.zakat_remaining)})`);
+  }
+  if (state.nashwa_total > 0 && (state.sadaqat_to_pool + zakatUsed) > state.nashwa_total + 1) {
+    warnings.push(`الإنفاق يتجاوز المبلغ عند نشوى`);
+  }
+
+  const vb = document.getElementById('validationBox');
+  if (warnings.length) {
+    vb.style.display = 'block';
+    vb.style.background = 'var(--warn-light)';
+    vb.style.borderRight = '4px solid var(--warn)';
+    vb.innerHTML = '<h3 style="margin:0;color:#6d4e00">⚠️ تحذيرات</h3>' +
+      warnings.map(w => `<div class="text-sm" style="color:#6d4e00">• ${w}</div>`).join('');
+  } else {
+    vb.style.display = 'none';
+  }
+}
+
+// ========== NAV & ACTIONS ==========
+
+function goStep(n) {
+  document.querySelectorAll('.step-btn').forEach((b,i) => {
+    b.classList.remove('active');
+    if (i < n-1) b.classList.add('done'); else b.classList.remove('done');
+  });
+  document.querySelector(`.step-btn[data-step="${n}"]`).classList.add('active');
+  document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`step${n}`).classList.add('active');
+  if (n===1) renderStep1();
+  if (n===3) renderStep3();
+  if (n===4) renderStep4();
+  if (n===5) renderStep5();
+  if (n===6) renderStep6();
+  window.scrollTo(0,0);
+}
+
+async function saveDraft() {
+  await ref(`months/${CURRENT_MONTH}`).update({
+    status: 'draft',
+    closure_state: state,
+    updated_at: Date.now()
+  });
+  await auditLog('save_draft', `months/${CURRENT_MONTH}`, null, state);
+  toast('✓ تم حفظ المسودة', 'success');
+}
+
+async function closeMonth() {
+  const {areas} = computeAreaTotals();
+  const order = ['الصف','كفر_علو','المعصرة','أماكن_أخرى'];
+  let yousTotal=0, nashTotal=0, grand=0;
+  order.forEach(a => {
+    const d = areas[a] || {total:0};
+    const yous = state.youssef_by_area[a]||0;
+    yousTotal += yous; nashTotal += Math.max(0, d.total - yous); grand += d.total;
+  });
+  if (state.include_fee) {
+    const kafrTotal = areas['كفر_علو']?.total || 0;
+    const fee = Math.round(kafrTotal*0.01);
+    const yousKafr = state.youssef_by_area['كفر_علو']||0;
+    yousTotal += Math.round(yousKafr*0.01);
+    nashTotal += Math.round(Math.max(0, kafrTotal-yousKafr)*0.01);
+    grand += fee;
+  }
+
+  const ok = await confirmImpact({
+    title: `إقفال ${arabicMonth(CURRENT_MONTH)}`,
+    message: 'بعد الإقفال، التعديلات ستُطبَّق و يُحفظ snapshot للتقارير.',
+    impact: [
+      `الإجمالي الكلي: <b>${fmt(grand)}</b>`,
+      `نصيب يوسف: <b>${fmt(yousTotal)}</b>`,
+      `نصيب نشوى: <b>${fmt(nashTotal)}</b>`,
+      `عدد التعديلات المطبّقة: <b>${pendingEdits.length}</b>`,
+      `نسخة احتياطية كاملة ستُحفظ تلقائياً ✓`
+    ]
+  });
+  if (!ok) return;
+
+  // AUTO BACKUP
+  toast('حفظ نسخة احتياطية...', 'info');
+  try { await createFullBackup({snapshotOnly: true}); }
+  catch(e) { toast('⚠️ فشل النسخ - الإقفال متوقف', 'error'); return; }
+
+  // ================================================
+  // APPLY ALL EDIT TYPES to permanent kafalat records
+  // Each edit is already baked into effective state
+  // Write whole-record for affected kafalat - safest approach
+  // ================================================
+  const effective = effectiveKafalat();
+  const affectedKids = new Set();
+  pendingEdits.forEach(e => { if (e.target_id) affectedKids.add(e.target_id); });
+
+  // Count what we're applying for the audit log
+  const appliedCounts = {kafala_new:0, kafala_update:0, funding_add:0, funding_update:0, funding_remove:0, oneoff:0};
+  pendingEdits.forEach(e => { if (appliedCounts[e.type] !== undefined) appliedCounts[e.type]++; });
+
+  // Write each affected kafala as a complete record (strip _oneoff which is monthly-only)
+  for (const kid of affectedKids) {
+    const updated = {...effective[kid]};
+    delete updated._oneoff;  // oneoff is for this month only, not persistent
+    updated.updated_at = Date.now();
+    await ref(`kafalat/${kid}`).set(updated);
+  }
+
+  // Build snapshot (freezes state at close time)
+  const snapshot = {
+    kafalat: effective,
+    people: allPeople,
+    config: config,
+    totals: {grand, youssef: yousTotal, nashwa: nashTotal, by_area: areas},
+    closure_state: state,
+    closed_at: Date.now(),
+    closed_by: 'youssef',
+    applied_edits_counts: appliedCounts
+  };
+
+  // Save month record
+  await ref(`months/${CURRENT_MONTH}`).set({
+    status: 'closed',
+    closed_at: Date.now(),
+    totals: snapshot.totals,
+    closure_state: state,
+    snapshot: snapshot,
+    edits: pendingEdits.reduce((o,e) => { const {id,...rest} = e; o[id]=rest; return o; }, {}),
+    applied_counts: appliedCounts
+  });
+
+  await auditLog('close_month', `months/${CURRENT_MONTH}`, null, {
+    totals: snapshot.totals,
+    applied: appliedCounts,
+    affected_kafalat: affectedKids.size
+  });
+
+  toast(`✓ تم إقفال الشهر - ${affectedKids.size} كفالة أُحدِّثت`, 'success');
+  setTimeout(() => location.href = 'reports.html', 1500);
+}
+
+load();
+</script>
+</body>
+</html>

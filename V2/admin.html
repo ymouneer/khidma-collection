@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>إدارة الكفالات — v2</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+  .filter-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+  .chip {
+    padding: 5px 12px; border-radius: 16px; font-size: 12px;
+    background: #fff; border: 1px solid var(--border); cursor: pointer;
+    color: var(--muted); font-weight: 500; transition: all var(--t-fast);
+  }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .kafala-row { cursor: pointer; }
+  .kafala-row.expanded { background: var(--cream); }
+  .kafala-detail {
+    background: var(--cream-deep);
+    padding: 16px 20px;
+    border-right: 3px solid var(--accent);
+  }
+  .funding-item {
+    background: #fff; border-radius: var(--r-sm); padding: 10px 14px;
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px; font-size: 13px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--border-light); margin-bottom: 20px; }
+  .tab {
+    padding: 10px 18px; cursor: pointer;
+    background: none; border: none; font-size: 14px; color: var(--muted);
+    border-bottom: 2px solid transparent; margin-bottom: -2px;
+    font-weight: 600; transition: all var(--t-fast);
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab:hover { color: var(--accent-light); }
+
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  .search-box { position: relative; min-width: 240px; }
+  .search-box input { padding-right: 36px; }
+  .search-box::before {
+    content: '🔍'; position: absolute; right: 12px; top: 50%;
+    transform: translateY(-50%); font-size: 13px; opacity: 0.4;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>👥 إدارة الكفالات</h1>
+  <div class="right">
+    <a href="home.html">الرئيسية</a>
+    <a href="closure.html" class="hide-mobile">إقفال</a>
+    <a href="reports.html" class="hide-mobile">تقارير</a>
+    <a href="backups.html" class="hide-mobile">النسخ</a>
+    <a onclick="createFullBackup()" class="btn-backup">💾 Backup</a>
+    <span class="logout" onclick="logout()">خروج</span>
+  </div>
+</div>
+
+<div class="container-wide">
+
+  <!-- STATS -->
+  <div class="stats" id="stats"></div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('kafalat')">الكفالات</button>
+    <button class="tab" onclick="switchTab('people')">الأشخاص</button>
+    <button class="tab" onclick="switchTab('edits')">تعديلات نوفمبر</button>
+  </div>
+
+  <!-- PANE: KAFALAT -->
+  <div class="pane active" id="pane-kafalat">
+    <div class="card">
+      <div class="toolbar">
+        <div class="search-box">
+          <input type="text" id="search" placeholder="بحث طفل/ولي/كفيل..." oninput="render()">
+        </div>
+        <select id="filterArea" onchange="render()">
+          <option value="">كل المناطق</option>
+          <option value="الصف">الصف</option>
+          <option value="كفر_علو">كفر علو</option>
+          <option value="المعصرة">المعصرة</option>
+          <option value="أماكن_أخرى">أماكن أخرى</option>
+        </select>
+        <select id="filterStatus" onchange="render()">
+          <option value="">كل الحالات</option>
+          <option value="active">نشطة</option>
+          <option value="paused">موقوفة</option>
+          <option value="ended">منتهية</option>
+        </select>
+        <select id="filterPrepaid" onchange="render()">
+          <option value="">كل الكفالات</option>
+          <option value="prepaid">مدفوعة مقدماً</option>
+          <option value="not_prepaid">غير مدفوعة مقدماً</option>
+          <option value="partial_prepaid">مدفوعة جزئياً</option>
+        </select>
+        <div class="spacer"></div>
+        <button onclick="openNewKafala()">+ كفالة جديدة</button>
+        <span class="info" id="countInfo">—</span>
+      </div>
+
+      <div class="filter-chips" id="chipFilters">
+        <div class="chip active" data-case="">الكل</div>
+        <div class="chip" data-case="كفالة_يتيم">كفالة يتيم</div>
+        <div class="chip" data-case="كفالة_طالب">كفالة طالب</div>
+        <div class="chip" data-case="أرملة">أرملة</div>
+        <div class="chip" data-case="حالات_خاصة">حالات خاصة</div>
+        <div class="chip" data-case="خبز">خبز</div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>المنطقة</th>
+            <th>الطفل</th>
+            <th>ولي الأمر</th>
+            <th>التمويل</th>
+            <th>المجموع</th>
+            <th>الحالة</th>
+            <th>إجراءات</th>
+          </tr></thead>
+          <tbody id="kafalatBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANE: PEOPLE -->
+  <div class="pane" id="pane-people">
+    <div class="card">
+      <div class="toolbar">
+        <div class="search-box">
+          <input type="text" id="peopleSearch" placeholder="بحث باسم أو دور..." oninput="renderPeople()">
+        </div>
+        <select id="filterRole" onchange="renderPeople()">
+          <option value="">كل الأدوار</option>
+          <option value="guardian">ولي أمر</option>
+          <option value="kafeel">كفيل</option>
+          <option value="pt">PT (محصّل)</option>
+        </select>
+        <div class="spacer"></div>
+        <button onclick="openNewPerson()">+ شخص جديد</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>الاسم</th>
+            <th>الأدوار</th>
+            <th>المنطقة</th>
+            <th>هاتف</th>
+            <th>ملاحظات</th>
+            <th>إجراءات</th>
+          </tr></thead>
+          <tbody id="peopleBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANE: EDITS -->
+  <div class="pane" id="pane-edits">
+    <div class="card">
+      <h3>📝 تعديلات نوفمبر ٢٠٢٦ (طابور الإقفال)</h3>
+      <p class="text-muted text-sm">كل تعديل تعمله هنا بينضاف للطابور. اعدي على <a href="closure.html">إقفال الشهر</a> لما تخلص.</p>
+      <div id="editsList"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- MODAL CONTAINER -->
+<div id="modalContainer"></div>
+
+<script src="config.js"></script>
+<script>
+if (!checkAuth()) throw new Error('auth');
+initFirebase();
+
+let allKafalat = {}, allPeople = {}, config = {}, pendingEdits = [];
+let caseFilter = '';
+const CURRENT_MONTH = '2026-11';
+
+async function load() {
+  [allPeople, allKafalat, config] = await Promise.all([fetchPeople(), fetchKafalat(), fetchConfig()]);
+  const eSnap = await ref(`months/${CURRENT_MONTH}/edits`).once('value');
+  const eVal = eSnap.val() || {};
+  pendingEdits = Object.entries(eVal).map(([id, e]) => ({id, ...e}));
+
+  // Setup chip filters
+  document.querySelectorAll('#chipFilters .chip').forEach(c => {
+    c.onclick = () => {
+      document.querySelectorAll('#chipFilters .chip').forEach(x => x.classList.remove('active'));
+      c.classList.add('active');
+      caseFilter = c.dataset.case;
+      render();
+    };
+  });
+
+  renderStats();
+  render();
+  renderPeople();
+  renderEdits();
+}
+
+function renderStats() {
+  const kafalat = Object.values(allKafalat).filter(k => k.status === 'active');
+  const byArea = {};
+  let totalBase = 0;
+  let prepaidCount = 0;
+
+  kafalat.forEach(k => {
+    byArea[k.area] = (byArea[k.area]||0) + 1;
+    totalBase += kafalaBaseAmount(k);
+    if (hasAnyPrepaid(k, CURRENT_MONTH)) prepaidCount++;
+  });
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat stat-accent">
+      <div class="label">إجمالي الكفالات</div>
+      <div class="value">${kafalat.length}</div>
+      <div class="sub">نشطة</div>
+    </div>
+    <div class="stat">
+      <div class="label">الصف</div>
+      <div class="value">${byArea['الصف']||0}</div>
+    </div>
+    <div class="stat">
+      <div class="label">كفر علو</div>
+      <div class="value">${byArea['كفر_علو']||0}</div>
+    </div>
+    <div class="stat">
+      <div class="label">المعصرة</div>
+      <div class="value">${byArea['المعصرة']||0}</div>
+    </div>
+    <div class="stat">
+      <div class="label">أماكن أخرى</div>
+      <div class="value">${byArea['أماكن_أخرى']||0}</div>
+    </div>
+    <div class="stat stat-gold">
+      <div class="label">إجمالي الأساسي</div>
+      <div class="value">${fmt(totalBase)}</div>
+      <div class="sub">جنيه/شهر</div>
+    </div>
+    <div class="stat">
+      <div class="label">مدفوعة مقدماً</div>
+      <div class="value">${prepaidCount}</div>
+    </div>
+    <div class="stat">
+      <div class="label">تعديلات نوفمبر</div>
+      <div class="value">${pendingEdits.length}</div>
+    </div>
+  `;
+}
+
+function render() {
+  const q = document.getElementById('search').value.trim();
+  const area = document.getElementById('filterArea').value;
+  const status = document.getElementById('filterStatus').value;
+  const prepaid = document.getElementById('filterPrepaid').value;
+
+  let items = Object.entries(allKafalat).map(([id, k]) => ({id, ...k}));
+
+  if (area) items = items.filter(k => k.area === area);
+  if (status) items = items.filter(k => k.status === status);
+  if (caseFilter) items = items.filter(k => k.case_type === caseFilter);
+  if (prepaid === 'prepaid') items = items.filter(k => isPrepaidFor(k, CURRENT_MONTH));
+  if (prepaid === 'not_prepaid') items = items.filter(k => !hasAnyPrepaid(k, CURRENT_MONTH));
+  if (prepaid === 'partial_prepaid') items = items.filter(k => hasAnyPrepaid(k, CURRENT_MONTH) && !isPrepaidFor(k, CURRENT_MONTH));
+
+  if (q) {
+    const ql = q.toLowerCase();
+    items = items.filter(k => {
+      const g = personName(allPeople, k.guardian_id);
+      const kafeels = (k.funding||[]).map(f => personName(allPeople, f.kafeel_id)).join(' ');
+      return (k.child||'').includes(q) || g.includes(q) || kafeels.includes(q);
+    });
+  }
+
+  items.sort((a,b) => (a.area||'').localeCompare(b.area||'') ||
+    personName(allPeople, a.guardian_id).localeCompare(personName(allPeople, b.guardian_id)));
+
+  const body = document.getElementById('kafalatBody');
+  body.innerHTML = items.map(k => renderKafalaRow(k)).join('');
+  document.getElementById('countInfo').textContent = `${items.length} كفالة`;
+}
+
+function renderKafalaRow(k) {
+  const guardian = personName(allPeople, k.guardian_id);
+  const total = kafalaBaseAmount(k);
+  const prepaid = isPrepaidFor(k, CURRENT_MONTH);
+  const partialPrepaid = hasAnyPrepaid(k, CURRENT_MONTH) && !prepaid;
+  const inactive = k.status !== 'active';
+
+  const fundingSummary = (k.funding||[]).map(f => {
+    if (f.source === 'sadaqat') return `<span class="badge badge-sadaqat">صدقات ${fmt(f.amount)}</span>`;
+    if (f.source === 'zakat') return `<span class="badge badge-zakat">زكاة ${fmt(f.amount)}</span>`;
+    return `<span class="badge">${personName(allPeople, f.kafeel_id)} ${fmt(f.amount)}</span>`;
+  }).join(' ');
+
+  const statusBadge = inactive ? `<span class="badge badge-${k.status}">${k.status==='paused'?'موقوفة':'منتهية'}</span>` :
+    prepaid ? `<span class="badge badge-prepaid">مدفوعة مقدماً</span>` :
+    partialPrepaid ? `<span class="badge badge-prepaid">مدفوعة جزئياً</span>` :
+    `<span class="badge badge-active">نشطة</span>`;
+
+  return `<tr class="kafala-row" style="${inactive?'opacity:0.5':''}" data-id="${k.id}" onclick="toggleExpand('${k.id}')">
+    <td><span class="badge">${areaDisplay(k.area)}</span></td>
+    <td><b>${k.child||'—'}</b>${k.child_dob?`<div class="text-xs text-muted">${k.child_dob}</div>`:''}</td>
+    <td>${guardian}</td>
+    <td>${fundingSummary}</td>
+    <td class="font-mono"><b>${fmt(total)}</b></td>
+    <td>${statusBadge}</td>
+    <td>
+      <button class="btn-small btn-ghost" onclick="event.stopPropagation();openEditKafala('${k.id}')">تعديل</button>
+    </td>
+  </tr>`;
+}
+
+function toggleExpand(id) {
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  const next = row.nextElementSibling;
+  if (next && next.classList.contains('kafala-detail-row')) {
+    next.remove();
+    row.classList.remove('expanded');
+    return;
+  }
+  const k = allKafalat[id];
+  if (!k) return;
+  row.classList.add('expanded');
+
+  const detailHtml = `<tr class="kafala-detail-row"><td colspan="7" style="padding:0">
+    <div class="kafala-detail">
+      <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 20px">
+        <div>
+          <h4 style="margin-top:0">تفاصيل الكفالة</h4>
+          <div class="text-sm">
+            <div><b>الطفل:</b> ${k.child||'—'}</div>
+            ${k.child_gender?`<div><b>الجنس:</b> ${k.child_gender==='m'?'ذكر':'أنثى'}</div>`:''}
+            ${k.child_dob?`<div><b>تاريخ الميلاد:</b> ${k.child_dob}</div>`:''}
+            ${k.school_level?`<div><b>المرحلة التعليمية:</b> ${k.school_level}</div>`:''}
+            ${k.subtype?`<div><b>تفاصيل إضافية:</b> ${k.subtype}</div>`:''}
+            <div><b>نوع الحالة:</b> ${caseTypeDisplay(k.case_type)}</div>
+            ${k.start_date?`<div><b>بداية الكفالة:</b> ${k.start_date}</div>`:''}
+            ${k.special_notes?`<div style="margin-top:8px;padding:8px;background:var(--warn-light);border-radius:6px"><b>⚠️ ${k.special_notes}</b></div>`:''}
+          </div>
+        </div>
+        <div>
+          <h4 style="margin-top:0">مصادر التمويل (${(k.funding||[]).length})</h4>
+          ${(k.funding||[]).map(f => renderFundingItem(f, id)).join('')}
+          <button class="btn-small btn-secondary mt-sm" onclick="openAddFunding('${id}')">+ إضافة مصدر تمويل</button>
+        </div>
+      </div>
+    </div>
+  </td></tr>`;
+  row.insertAdjacentHTML('afterend', detailHtml);
+}
+
+function renderFundingItem(f, kid) {
+  let srcLabel = '';
+  if (f.source === 'kafeel') srcLabel = `<b>${personName(allPeople, f.kafeel_id)}</b>`;
+  else if (f.source === 'sadaqat') srcLabel = `<span class="badge badge-sadaqat">صدقات</span>`;
+  else srcLabel = `<span class="badge badge-zakat">زكاة</span>`;
+
+  return `<div class="funding-item">
+    <div>
+      ${srcLabel}
+      ${f.notes?`<div class="text-xs text-muted" style="margin-top:3px">${f.notes}</div>`:''}
+      ${f.prepaid_through?`<div class="text-xs"><span class="badge badge-prepaid">مدفوع حتى ${arabicMonth(f.prepaid_through)}</span></div>`:''}
+    </div>
+    <div class="flex gap-sm">
+      <span class="font-mono"><b>${fmt(f.amount)}</b></span>
+      <button class="btn-small btn-ghost" onclick="openEditFunding('${kid}','${f.fid}')">تعديل</button>
+    </div>
+  </div>`;
+}
+
+function renderPeople() {
+  const q = document.getElementById('peopleSearch').value.trim().toLowerCase();
+  const role = document.getElementById('filterRole').value;
+
+  let items = Object.entries(allPeople).map(([id,p])=>({id,...p}));
+  if (role) items = items.filter(p => (p.roles||[]).includes(role));
+  if (q) items = items.filter(p => p.name.toLowerCase().includes(q));
+  items.sort((a,b) => a.name.localeCompare(b.name));
+
+  document.getElementById('peopleBody').innerHTML = items.slice(0, 200).map(p => `
+    <tr>
+      <td><b>${p.name}</b></td>
+      <td>${(p.roles||[]).map(r => `<span class="badge">${r==='guardian'?'ولي':r==='kafeel'?'كفيل':'PT'}</span>`).join(' ')}</td>
+      <td>${areaDisplay(p.area)||'—'}</td>
+      <td>${p.phone||'—'}</td>
+      <td class="text-sm text-muted">${p.notes||'—'}</td>
+      <td><button class="btn-small btn-ghost" onclick="openEditPerson('${p.id}')">تعديل</button></td>
+    </tr>
+  `).join('');
+  if (items.length > 200) {
+    document.getElementById('peopleBody').insertAdjacentHTML('beforeend',
+      `<tr><td colspan="6" class="text-muted text-sm" style="text-align:center">عرض أول 200 من ${items.length} - استخدم البحث للتحديد</td></tr>`);
+  }
+}
+
+function renderEdits() {
+  const el = document.getElementById('editsList');
+  if (pendingEdits.length === 0) {
+    el.innerHTML = '<div class="text-muted" style="padding:30px;text-align:center">لا توجد تعديلات بعد</div>';
+    return;
+  }
+  el.innerHTML = `<table>
+    <thead><tr><th>النوع</th><th>الهدف</th><th>التفاصيل</th><th>الوقت</th><th></th></tr></thead>
+    <tbody>${pendingEdits.map(e => `
+      <tr>
+        <td><span class="badge">${e.type}</span></td>
+        <td>${e.target_label||'—'}</td>
+        <td class="text-sm text-muted">${e.description||''}</td>
+        <td class="text-xs text-muted">${new Date(e.ts).toLocaleString('ar-EG')}</td>
+        <td><button class="btn-small btn-danger" onclick="undoEdit('${e.id}')">تراجع</button></td>
+      </tr>`).join('')}</tbody></table>`;
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('pane-' + name).classList.add('active');
+}
+
+// Modal helpers (shared)
+function modal(title, bodyHtml, onSave) {
+  const container = document.getElementById('modalContainer');
+  container.innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+      <h3>${title}</h3>
+      <div id="modalBody">${bodyHtml}</div>
+      <div class="modal-actions">
+        <button onclick="handleModalSave()">حفظ</button>
+        <button class="btn-ghost" onclick="closeModal()">إلغاء</button>
+      </div>
+    </div></div>`;
+  window._modalSave = onSave;
+}
+function closeModal() { document.getElementById('modalContainer').innerHTML = ''; window._modalSave = null; }
+function handleModalSave() { if (window._modalSave) window._modalSave(); }
+
+// ============= EDIT KAFALA =============
+function openEditKafala(kid) {
+  const k = allKafalat[kid];
+  if (!k) return;
+  const schoolLevels = ['','ابتدائي','إعدادي','ثانوي','جامعي','دبلوم','خريج','لا_ينطبق'];
+  modal(`تعديل: ${k.child}`, `
+    <div class="form-row">
+      <div><label>الطفل</label><input id="f_child" value="${k.child||''}"></div>
+      <div><label>ولي الأمر</label>${renderPersonSelect('f_guardian', k.guardian_id, 'guardian')}</div>
+    </div>
+    <div class="form-row three">
+      <div><label>المنطقة</label>
+        <select id="f_area">
+          <option value="الصف" ${k.area==='الصف'?'selected':''}>الصف</option>
+          <option value="كفر_علو" ${k.area==='كفر_علو'?'selected':''}>كفر علو</option>
+          <option value="المعصرة" ${k.area==='المعصرة'?'selected':''}>المعصرة</option>
+          <option value="أماكن_أخرى" ${k.area==='أماكن_أخرى'?'selected':''}>أماكن أخرى</option>
+        </select>
+      </div>
+      <div><label>نوع الحالة</label>
+        <select id="f_case">
+          <option value="كفالة_يتيم" ${k.case_type==='كفالة_يتيم'?'selected':''}>كفالة يتيم</option>
+          <option value="كفالة_طالب" ${k.case_type==='كفالة_طالب'?'selected':''}>كفالة طالب</option>
+          <option value="أرملة" ${k.case_type==='أرملة'?'selected':''}>أرملة</option>
+          <option value="حالات_خاصة" ${k.case_type==='حالات_خاصة'?'selected':''}>حالات خاصة</option>
+          <option value="خبز" ${k.case_type==='خبز'?'selected':''}>خبز</option>
+        </select>
+      </div>
+      <div><label>الحالة</label>
+        <select id="f_status">
+          <option value="active" ${k.status==='active'?'selected':''}>نشطة</option>
+          <option value="paused" ${k.status==='paused'?'selected':''}>موقوفة</option>
+          <option value="ended" ${k.status==='ended'?'selected':''}>منتهية</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row three">
+      <div><label>الجنس (اختياري)</label>
+        <select id="f_gender">
+          <option value="">—</option>
+          <option value="m" ${k.child_gender==='m'?'selected':''}>ذكر</option>
+          <option value="f" ${k.child_gender==='f'?'selected':''}>أنثى</option>
+        </select>
+      </div>
+      <div><label>تاريخ الميلاد (اختياري)</label><input id="f_dob" type="text" placeholder="YYYY-MM-DD" value="${k.child_dob||''}"></div>
+      <div><label>المرحلة التعليمية (اختياري)</label>
+        <select id="f_school">
+          ${schoolLevels.map(s => `<option value="${s}" ${k.school_level===s?'selected':''}>${s||'—'}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-row single">
+      <div><label>تفاصيل إضافية (اختياري)</label><input id="f_subtype" value="${k.subtype||''}" placeholder="مثال: طالبة في كلية الآداب"></div>
+    </div>
+    <div class="form-row single">
+      <div><label>ملاحظات مهمة (اختياري)</label><input id="f_special" value="${k.special_notes||''}" placeholder="تحذير أو ملاحظة ظاهرة"></div>
+    </div>
+  `, () => saveKafala(kid));
+}
+
+async function saveKafala(kid) {
+  const k = allKafalat[kid];
+  const updates = {
+    child: document.getElementById('f_child').value.trim(),
+    guardian_id: document.getElementById('f_guardian').value || null,
+    area: document.getElementById('f_area').value,
+    case_type: document.getElementById('f_case').value,
+    status: document.getElementById('f_status').value,
+    child_gender: document.getElementById('f_gender').value || null,
+    child_dob: document.getElementById('f_dob').value.trim() || null,
+    school_level: document.getElementById('f_school').value || null,
+    subtype: document.getElementById('f_subtype').value.trim() || null,
+    special_notes: document.getElementById('f_special').value.trim() || null,
+    updated_at: Date.now()
+  };
+
+  const ok = await confirmImpact({
+    title: 'تأكيد تعديل كفالة',
+    message: `هذا التعديل يُسجَّل في طابور تعديلات نوفمبر و يُطبّق عند الإقفال.`,
+    impact: [
+      `الطفل: <b>${updates.child}</b>`,
+      `ولي الأمر: <b>${personName(allPeople, updates.guardian_id)}</b>`,
+      `المنطقة: <b>${areaDisplay(updates.area)}</b>`,
+      `الحالة: <b>${updates.status}</b>`
+    ]
+  });
+  if (!ok) return;
+
+  // Save as pending edit (not direct apply - follows closure flow)
+  const editId = uid();
+  await ref(`months/${CURRENT_MONTH}/edits/${editId}`).set({
+    type: 'kafala_update',
+    target_id: kid,
+    target_label: `${k.child} / ${personName(allPeople, k.guardian_id)}`,
+    description: 'تحديث بيانات الكفالة',
+    before: {
+      child: k.child, guardian_id: k.guardian_id, area: k.area,
+      case_type: k.case_type, status: k.status,
+      child_gender: k.child_gender, child_dob: k.child_dob,
+      school_level: k.school_level, subtype: k.subtype, special_notes: k.special_notes
+    },
+    after: updates,
+    ts: Date.now(),
+    author: 'youssef'
+  });
+  await auditLog('add_edit_kafala', `months/${CURRENT_MONTH}/edits/${editId}`, null, updates);
+  toast('✓ أُضيف للطابور', 'success');
+  closeModal();
+  await load();
+}
+
+// ============= PERSON SELECT (searchable) =============
+function renderPersonSelect(id, value, filterRole) {
+  let people = Object.entries(allPeople).map(([pid,p])=>({pid,...p}));
+  if (filterRole) people = people.filter(p => (p.roles||[]).includes(filterRole));
+  people.sort((a,b) => a.name.localeCompare(b.name));
+  return `<select id="${id}">
+    <option value="">— اختر —</option>
+    ${people.map(p => `<option value="${p.pid}" ${value===p.pid?'selected':''}>${p.name}</option>`).join('')}
+  </select>`;
+}
+
+function undoEdit(editId) {
+  confirmImpact({
+    title: 'تراجع عن التعديل',
+    message: 'هذا التعديل سيُحذف من الطابور',
+    impact: ['لن يُطبَّق عند الإقفال']
+  }).then(async ok => {
+    if (!ok) return;
+    const e = pendingEdits.find(x=>x.id===editId);
+    await ref(`months/${CURRENT_MONTH}/edits/${editId}`).remove();
+    await auditLog('undo_edit', `months/${CURRENT_MONTH}/edits/${editId}`, e, null);
+    toast('تم التراجع', 'success');
+    await load();
+  });
+}
+
+// ============= NEW KAFALA =============
+function openNewKafala() {
+  const schoolLevels = ['','ابتدائي','إعدادي','ثانوي','جامعي','دبلوم','خريج','لا_ينطبق'];
+  modal('كفالة جديدة', `
+    <div class="form-row">
+      <div><label>اسم الطفل *</label><input id="nk_child" placeholder="اسم الطفل الكامل"></div>
+      <div><label>ولي الأمر *</label>${renderPersonSelect('nk_guardian', '', 'guardian')}
+        <button class="btn-small btn-ghost mt-sm" onclick="openNewPerson(['guardian'], v => { document.getElementById('nk_guardian').value = v; })">+ إضافة ولي أمر جديد</button>
+      </div>
+    </div>
+    <div class="form-row three">
+      <div><label>المنطقة *</label>
+        <select id="nk_area">
+          <option value="الصف">الصف</option>
+          <option value="كفر_علو">كفر علو</option>
+          <option value="المعصرة">المعصرة</option>
+          <option value="أماكن_أخرى">أماكن أخرى</option>
+        </select>
+      </div>
+      <div><label>نوع الحالة *</label>
+        <select id="nk_case">
+          <option value="كفالة_يتيم">كفالة يتيم</option>
+          <option value="كفالة_طالب">كفالة طالب</option>
+          <option value="أرملة">أرملة</option>
+          <option value="حالات_خاصة">حالات خاصة</option>
+          <option value="خبز">خبز</option>
+        </select>
+      </div>
+      <div><label>تاريخ البدء</label><input id="nk_start" placeholder="YYYY-MM" value="${currentMonth()}"></div>
+    </div>
+    <div class="form-row three">
+      <div><label>الجنس (اختياري)</label>
+        <select id="nk_gender"><option value="">—</option><option value="m">ذكر</option><option value="f">أنثى</option></select>
+      </div>
+      <div><label>تاريخ الميلاد (اختياري)</label><input id="nk_dob" placeholder="YYYY-MM-DD"></div>
+      <div><label>المرحلة التعليمية (اختياري)</label>
+        <select id="nk_school">${schoolLevels.map(s=>`<option value="${s}">${s||'—'}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="form-row single">
+      <div><label>تفاصيل إضافية (اختياري)</label><input id="nk_subtype" placeholder="مثال: طالبة في كلية الآداب"></div>
+    </div>
+    <h4 style="margin-top:20px">مصدر التمويل الأول</h4>
+    <div class="form-row three">
+      <div><label>المصدر *</label>
+        <select id="nk_src" onchange="toggleNkKafeel()">
+          <option value="kafeel">كفيل محدد</option>
+          <option value="sadaqat">صدقات</option>
+          <option value="zakat">زكاة</option>
+        </select>
+      </div>
+      <div id="nk_kafeel_wrap"><label>الكفيل *</label>${renderPersonSelect('nk_kafeel', '', 'kafeel')}
+        <button class="btn-small btn-ghost mt-sm" onclick="openNewPerson(['kafeel'], v => { document.getElementById('nk_kafeel').value = v; refreshNkPt(v); })">+ كفيل جديد</button>
+      </div>
+      <div><label>المبلغ *</label><input id="nk_amount" type="number" placeholder="500"></div>
+    </div>
+    <div class="form-row" id="nk_pt_wrap">
+      <div><label>محصّل (PT) - من اللي نشوى تحصّل منه</label>${renderPersonSelect('nk_pt', '', 'pt')}</div>
+      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="nk_prepaid" placeholder="YYYY-MM"></div>
+    </div>
+  `, saveNewKafala);
+  setTimeout(toggleNkKafeel, 50);
+}
+
+function toggleNkKafeel() {
+  const src = document.getElementById('nk_src').value;
+  document.getElementById('nk_kafeel_wrap').style.display = src === 'kafeel' ? '' : 'none';
+  document.getElementById('nk_pt_wrap').style.display = src === 'kafeel' ? '' : 'none';
+}
+
+function refreshNkPt(kafeelId) {
+  // When new kafeel added, default pt = kafeel
+  const sel = document.getElementById('nk_pt');
+  if (sel && !sel.value) sel.value = kafeelId;
+}
+
+async function saveNewKafala() {
+  const child = document.getElementById('nk_child').value.trim();
+  const guardian_id = document.getElementById('nk_guardian').value;
+  const area = document.getElementById('nk_area').value;
+  const case_type = document.getElementById('nk_case').value;
+  const start_ym = document.getElementById('nk_start').value.trim();
+  const src = document.getElementById('nk_src').value;
+  const amount = parseInt(document.getElementById('nk_amount').value);
+
+  if (!child) return toast('اسم الطفل مطلوب', 'error');
+  if (!guardian_id) return toast('ولي الأمر مطلوب', 'error');
+  if (!amount || amount <= 0) return toast('المبلغ غير صحيح', 'error');
+
+  const funding = {
+    fid: 'f_' + uid(),
+    source: src,
+    amount: amount,
+    start_ym: start_ym || currentMonth(),
+    notes: ''
+  };
+
+  if (src === 'kafeel') {
+    const kafeel_id = document.getElementById('nk_kafeel').value;
+    if (!kafeel_id) return toast('الكفيل مطلوب', 'error');
+    funding.kafeel_id = kafeel_id;
+    const pt = document.getElementById('nk_pt').value;
+    if (pt) funding.pt_id = pt;
+    else funding.pt_id = kafeel_id; // default: kafeel is own PT
+  }
+
+  const prepaid = document.getElementById('nk_prepaid').value.trim();
+  if (prepaid && /^\d{4}-\d{2}$/.test(prepaid)) funding.prepaid_through = prepaid;
+
+  const newKafala = {
+    child, guardian_id, area, case_type,
+    status: 'active',
+    funding: [funding],
+    child_dob: document.getElementById('nk_dob').value.trim() || null,
+    child_gender: document.getElementById('nk_gender').value || null,
+    school_level: document.getElementById('nk_school').value || null,
+    subtype: document.getElementById('nk_subtype').value.trim() || null,
+    special_notes: null,
+    start_date: start_ym || null,
+    notes: '',
+    created_at: Date.now(),
+    updated_at: Date.now()
+  };
+
+  const ok = await confirmImpact({
+    title: 'إضافة كفالة جديدة',
+    message: 'سيتم إنشاء كفالة جديدة في طابور نوفمبر.',
+    impact: [
+      `الطفل: <b>${child}</b>`,
+      `المنطقة: <b>${areaDisplay(area)}</b>`,
+      `المصدر: <b>${src==='kafeel'?personName(allPeople, funding.kafeel_id):src}</b>`,
+      `المبلغ: <b>${fmt(amount)} جنيه</b>`,
+      prepaid ? `مدفوع حتى: <b>${arabicMonth(prepaid)}</b>` : ''
+    ].filter(x=>x)
+  });
+  if (!ok) return;
+
+  const kid = 'k_' + uid();
+  const editId = uid();
+  await ref(`months/${CURRENT_MONTH}/edits/${editId}`).set({
+    type: 'kafala_new',
+    target_id: kid,
+    target_label: child,
+    description: `جديد - ${areaDisplay(area)} - ${fmt(amount)} جنيه`,
+    after: newKafala,
+    ts: Date.now(),
+    author: 'youssef'
+  });
+  await auditLog('queue_new_kafala', `months/${CURRENT_MONTH}/edits/${editId}`, null, {kid, child});
+  toast('✓ أُضيف للطابور', 'success');
+  closeModal();
+  await load();
+}
+
+// ============= ADD FUNDING to existing kafala =============
+function openAddFunding(kid) {
+  const k = allKafalat[kid];
+  if (!k) return;
+  modal(`إضافة مصدر تمويل لـ: ${k.child}`, `
+    <div class="form-row three">
+      <div><label>المصدر *</label>
+        <select id="af_src" onchange="toggleAfKafeel()">
+          <option value="kafeel">كفيل محدد</option>
+          <option value="sadaqat">صدقات</option>
+          <option value="zakat">زكاة</option>
+        </select>
+      </div>
+      <div id="af_kafeel_wrap"><label>الكفيل *</label>${renderPersonSelect('af_kafeel', '', 'kafeel')}</div>
+      <div><label>المبلغ *</label><input id="af_amount" type="number"></div>
+    </div>
+    <div class="form-row">
+      <div id="af_pt_wrap"><label>محصّل (PT)</label>${renderPersonSelect('af_pt', '', 'pt')}</div>
+      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="af_prepaid" placeholder="YYYY-MM"></div>
+    </div>
+    <div class="form-row single"><div><label>ملاحظات</label><input id="af_notes"></div></div>
+  `, () => saveAddFunding(kid));
+  setTimeout(toggleAfKafeel, 50);
+}
+
+function toggleAfKafeel() {
+  const src = document.getElementById('af_src').value;
+  document.getElementById('af_kafeel_wrap').style.display = src === 'kafeel' ? '' : 'none';
+  document.getElementById('af_pt_wrap').style.display = src === 'kafeel' ? '' : 'none';
+}
+
+async function saveAddFunding(kid) {
+  const k = allKafalat[kid];
+  const src = document.getElementById('af_src').value;
+  const amount = parseInt(document.getElementById('af_amount').value);
+  if (!amount || amount <= 0) return toast('المبلغ غير صحيح', 'error');
+
+  const funding = {
+    fid: 'f_' + uid(),
+    source: src,
+    amount,
+    start_ym: currentMonth(),
+    notes: document.getElementById('af_notes').value.trim()
+  };
+  if (src === 'kafeel') {
+    const kafeel_id = document.getElementById('af_kafeel').value;
+    if (!kafeel_id) return toast('الكفيل مطلوب', 'error');
+    funding.kafeel_id = kafeel_id;
+    const pt = document.getElementById('af_pt').value || kafeel_id;
+    funding.pt_id = pt;
+  }
+  const prepaid = document.getElementById('af_prepaid').value.trim();
+  if (prepaid && /^\d{4}-\d{2}$/.test(prepaid)) funding.prepaid_through = prepaid;
+
+  const ok = await confirmImpact({
+    title: 'إضافة مصدر تمويل',
+    message: `إضافة لكفالة ${k.child}`,
+    impact: [
+      `المصدر: <b>${src==='kafeel'?personName(allPeople, funding.kafeel_id):src}</b>`,
+      `المبلغ: <b>${fmt(amount)}</b>`,
+      prepaid ? `مدفوع حتى: <b>${arabicMonth(prepaid)}</b>` : '',
+      `إجمالي الكفالة بعد الإضافة: <b>${fmt(kafalaBaseAmount(k) + amount)}</b>`
+    ].filter(x=>x)
+  });
+  if (!ok) return;
+
+  const editId = uid();
+  await ref(`months/${CURRENT_MONTH}/edits/${editId}`).set({
+    type: 'funding_add',
+    target_id: kid,
+    target_label: `${k.child} / ${personName(allPeople, k.guardian_id)}`,
+    description: `+ مصدر: ${src==='kafeel'?personName(allPeople, funding.kafeel_id):src} (${fmt(amount)})`,
+    after: funding,
+    ts: Date.now(),
+    author: 'youssef'
+  });
+  await auditLog('queue_funding_add', `months/${CURRENT_MONTH}/edits/${editId}`, null, funding);
+  toast('✓ أُضيف للطابور', 'success');
+  closeModal();
+  await load();
+}
+
+// ============= EDIT FUNDING (amount, taweed, prepaid) =============
+function openEditFunding(kid, fid) {
+  const k = allKafalat[kid];
+  const f = (k.funding||[]).find(x => x.fid === fid);
+  if (!f) return;
+  modal(`تعديل مصدر تمويل - ${k.child}`, `
+    <div style="padding:10px;background:var(--cream-deep);border-radius:6px;margin-bottom:12px" class="text-sm">
+      <b>الحالي:</b> ${f.source === 'kafeel' ? personName(allPeople, f.kafeel_id) : f.source} / ${fmt(f.amount)} جنيه
+      ${f.prepaid_through?` / مدفوع حتى ${arabicMonth(f.prepaid_through)}`:''}
+    </div>
+    <div class="form-row">
+      <div><label>نوع التعديل</label>
+        <select id="ef_type" onchange="refreshEfForm('${kid}','${fid}')">
+          <option value="amount">تعديل المبلغ</option>
+          <option value="taweed">تبديل كفيل (تويد)</option>
+          <option value="prepay">دفع مقدم</option>
+          <option value="oneoff">زيادة وقتية لشهر واحد</option>
+          <option value="remove">حذف هذا المصدر</option>
+        </select>
+      </div>
+      <div><label>سبب التعديل (اختياري)</label><input id="ef_note" placeholder="سبب التغيير..."></div>
+    </div>
+    <div id="ef_fields"></div>
+  `, () => saveEditFunding(kid, fid));
+  setTimeout(() => refreshEfForm(kid, fid), 50);
+}
+
+function refreshEfForm(kid, fid) {
+  const k = allKafalat[kid];
+  const f = (k.funding||[]).find(x => x.fid === fid);
+  const type = document.getElementById('ef_type').value;
+  const el = document.getElementById('ef_fields');
+  if (type === 'amount') {
+    el.innerHTML = `<div class="form-row single"><div><label>المبلغ الجديد</label><input type="number" id="ef_val" value="${f.amount}"></div></div>`;
+  } else if (type === 'taweed') {
+    el.innerHTML = `<div class="form-row">
+      <div><label>الكفيل الجديد</label>${renderPersonSelect('ef_newkafeel', f.kafeel_id, 'kafeel')}</div>
+      <div><label>المحصّل (PT) الجديد</label>${renderPersonSelect('ef_newpt', f.pt_id, 'pt')}</div>
+    </div>
+    <div class="form-row single"><div><label>تاريخ بدء التبديل</label><input id="ef_startym" value="${currentMonth()}" placeholder="YYYY-MM"></div></div>`;
+  } else if (type === 'prepay') {
+    el.innerHTML = `<div class="form-row single"><div><label>مدفوع حتى (YYYY-MM)</label><input id="ef_val" placeholder="2027-01" value="${f.prepaid_through||''}"></div></div>`;
+  } else if (type === 'oneoff') {
+    el.innerHTML = `<div class="form-row single"><div><label>مبلغ الزيادة (لـ ${arabicMonth(CURRENT_MONTH)} فقط)</label><input type="number" id="ef_val" placeholder="400"></div></div>`;
+  } else if (type === 'remove') {
+    el.innerHTML = `<div style="padding:14px;background:var(--danger-light);border-radius:6px;color:var(--danger);font-size:13px">
+      سيتم حذف هذا المصدر عند إقفال الشهر. إجمالي الكفالة سينقص بـ ${fmt(f.amount)} جنيه.
+    </div>`;
+  }
+}
+
+async function saveEditFunding(kid, fid) {
+  const k = allKafalat[kid];
+  const f = (k.funding||[]).find(x => x.fid === fid);
+  const type = document.getElementById('ef_type').value;
+  const note = document.getElementById('ef_note').value.trim();
+
+  let editType = 'funding_update', after = {}, description = '';
+
+  if (type === 'amount') {
+    const v = parseInt(document.getElementById('ef_val').value);
+    if (!v || v <= 0) return toast('مبلغ غير صحيح', 'error');
+    after = {amount: v};
+    description = `مبلغ: ${fmt(f.amount)} ← ${fmt(v)}`;
+  } else if (type === 'taweed') {
+    const newk = document.getElementById('ef_newkafeel').value;
+    const newpt = document.getElementById('ef_newpt').value;
+    const startym = document.getElementById('ef_startym').value.trim();
+    if (!newk) return toast('الكفيل الجديد مطلوب', 'error');
+    after = {kafeel_id: newk, pt_id: newpt || newk, start_ym: startym || currentMonth()};
+    description = `تويد: ${personName(allPeople, f.kafeel_id)} ← ${personName(allPeople, newk)}`;
+  } else if (type === 'prepay') {
+    const v = document.getElementById('ef_val').value.trim();
+    if (!/^\d{4}-\d{2}$/.test(v)) return toast('صيغة الشهر خاطئة', 'error');
+    after = {prepaid_through: v};
+    description = `مدفوع حتى ${arabicMonth(v)}`;
+  } else if (type === 'oneoff') {
+    const v = parseInt(document.getElementById('ef_val').value);
+    if (!v) return toast('مبلغ غير صحيح', 'error');
+    editType = 'oneoff';
+    after = {amount: v, fid: fid};
+    description = `زيادة وقتية +${fmt(v)} (${note||'بدون سبب'})`;
+  } else if (type === 'remove') {
+    editType = 'funding_remove';
+    description = `حذف مصدر: ${f.source==='kafeel'?personName(allPeople,f.kafeel_id):f.source} (${fmt(f.amount)})`;
+  }
+
+  const ok = await confirmImpact({
+    title: 'تعديل مصدر تمويل',
+    message: `كفالة: ${k.child}`,
+    impact: [description, note?`ملاحظة: ${note}`:''].filter(x=>x)
+  });
+  if (!ok) return;
+
+  const editId = uid();
+  await ref(`months/${CURRENT_MONTH}/edits/${editId}`).set({
+    type: editType,
+    target_id: kid,
+    sub_id: fid,
+    target_label: `${k.child} / ${personName(allPeople, k.guardian_id)}`,
+    description,
+    note,
+    before: {amount: f.amount, kafeel_id: f.kafeel_id, pt_id: f.pt_id, prepaid_through: f.prepaid_through},
+    after,
+    ts: Date.now(),
+    author: 'youssef'
+  });
+  await auditLog('queue_' + editType, `months/${CURRENT_MONTH}/edits/${editId}`, {fid}, after);
+  toast('✓ أُضيف للطابور', 'success');
+  closeModal();
+  await load();
+}
+
+// ============= NEW PERSON =============
+function openNewPerson(presetRoles, callback) {
+  const presets = presetRoles || [];
+  modal('شخص جديد', `
+    <div class="form-row">
+      <div><label>الاسم *</label><input id="np_name"></div>
+      <div><label>المنطقة (اختياري)</label>
+        <select id="np_area">
+          <option value="">—</option>
+          <option value="الصف">الصف</option>
+          <option value="كفر_علو">كفر علو</option>
+          <option value="المعصرة">المعصرة</option>
+          <option value="أماكن_أخرى">أماكن أخرى</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row single">
+      <div><label>الأدوار (يمكن اختيار أكثر من دور)</label>
+        <div class="flex gap mt-sm">
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="np_g" ${presets.includes('guardian')?'checked':''} style="width:auto"> ولي أمر</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="np_k" ${presets.includes('kafeel')?'checked':''} style="width:auto"> كفيل</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="np_p" ${presets.includes('pt')?'checked':''} style="width:auto"> PT (محصّل)</label>
+        </div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div><label>هاتف (اختياري)</label><input id="np_phone"></div>
+      <div><label>علاقة بالطفل (اختياري)</label><input id="np_rel" placeholder="والدة، جدة، عم..."></div>
+    </div>
+    <div class="form-row single"><div><label>ملاحظات</label><input id="np_notes"></div></div>
+  `, () => saveNewPerson(callback));
+}
+
+async function saveNewPerson(callback) {
+  const name = document.getElementById('np_name').value.trim();
+  if (!name) return toast('الاسم مطلوب', 'error');
+  const roles = [];
+  if (document.getElementById('np_g').checked) roles.push('guardian');
+  if (document.getElementById('np_k').checked) roles.push('kafeel');
+  if (document.getElementById('np_p').checked) roles.push('pt');
+  if (roles.length === 0) return toast('اختر دور واحد على الأقل', 'error');
+
+  const person = {
+    name,
+    aliases: [],
+    roles,
+    area: document.getElementById('np_area').value || null,
+    phone: document.getElementById('np_phone').value.trim() || null,
+    relationship_to_child: document.getElementById('np_rel').value.trim() || null,
+    notes: document.getElementById('np_notes').value.trim() || '',
+    active: true,
+    created_at: Date.now(),
+    updated_at: Date.now()
+  };
+
+  const pid = 'p_' + uid();
+  // Write directly to people (new entities don't go through monthly queue)
+  await ref(`people/${pid}`).set(person);
+  await auditLog('add_person', `people/${pid}`, null, person);
+  toast('✓ تمت الإضافة', 'success');
+  allPeople[pid] = person;
+  if (callback) callback(pid);
+  closeModal();
+  renderPeople();
+}
+
+// ============= EDIT PERSON =============
+function openEditPerson(pid) {
+  const p = allPeople[pid];
+  if (!p) return;
+  modal(`تعديل: ${p.name}`, `
+    <div class="form-row">
+      <div><label>الاسم</label><input id="ep_name" value="${p.name}"></div>
+      <div><label>المنطقة</label>
+        <select id="ep_area">
+          <option value="" ${!p.area?'selected':''}>—</option>
+          <option value="الصف" ${p.area==='الصف'?'selected':''}>الصف</option>
+          <option value="كفر_علو" ${p.area==='كفر_علو'?'selected':''}>كفر علو</option>
+          <option value="المعصرة" ${p.area==='المعصرة'?'selected':''}>المعصرة</option>
+          <option value="أماكن_أخرى" ${p.area==='أماكن_أخرى'?'selected':''}>أماكن أخرى</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row single">
+      <div><label>الأدوار</label>
+        <div class="flex gap mt-sm">
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="ep_g" ${(p.roles||[]).includes('guardian')?'checked':''} style="width:auto"> ولي أمر</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="ep_k" ${(p.roles||[]).includes('kafeel')?'checked':''} style="width:auto"> كفيل</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="ep_p" ${(p.roles||[]).includes('pt')?'checked':''} style="width:auto"> PT</label>
+        </div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div><label>هاتف</label><input id="ep_phone" value="${p.phone||''}"></div>
+      <div><label>علاقة بالطفل</label><input id="ep_rel" value="${p.relationship_to_child||''}"></div>
+    </div>
+    <div class="form-row single"><div><label>ملاحظات</label><input id="ep_notes" value="${p.notes||''}"></div></div>
+    <div class="form-row single">
+      <div><label><input type="checkbox" id="ep_active" ${p.active!==false?'checked':''} style="width:auto"> نشط</label></div>
+    </div>
+  `, () => saveEditPerson(pid));
+}
+
+async function saveEditPerson(pid) {
+  const p = allPeople[pid];
+  const name = document.getElementById('ep_name').value.trim();
+  if (!name) return toast('الاسم مطلوب', 'error');
+  const roles = [];
+  if (document.getElementById('ep_g').checked) roles.push('guardian');
+  if (document.getElementById('ep_k').checked) roles.push('kafeel');
+  if (document.getElementById('ep_p').checked) roles.push('pt');
+  if (roles.length === 0) return toast('اختر دور واحد على الأقل', 'error');
+
+  const updates = {
+    name, roles,
+    area: document.getElementById('ep_area').value || null,
+    phone: document.getElementById('ep_phone').value.trim() || null,
+    relationship_to_child: document.getElementById('ep_rel').value.trim() || null,
+    notes: document.getElementById('ep_notes').value.trim() || '',
+    active: document.getElementById('ep_active').checked,
+    updated_at: Date.now()
+  };
+
+  const ok = await confirmImpact({
+    title: 'تعديل بيانات شخص',
+    message: 'سيتم تحديث البيانات مباشرة (الأشخاص لا تدخل الطابور الشهري).',
+    impact: [
+      `الاسم: <b>${name}</b>`,
+      `الأدوار: <b>${roles.join(', ')}</b>`,
+      `نشط: <b>${updates.active?'نعم':'لا'}</b>`
+    ]
+  });
+  if (!ok) return;
+
+  await ref(`people/${pid}`).update(updates);
+  await auditLog('edit_person', `people/${pid}`, p, updates);
+  Object.assign(allPeople[pid], updates);
+  toast('✓ تم التعديل', 'success');
+  closeModal();
+  renderPeople();
+}
+
+load();
+</script>
+</body>
+</html>

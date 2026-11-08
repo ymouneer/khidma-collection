@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>التقارير والرسائل — v2</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+  .report-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px;
+  }
+  .report-tile {
+    background: #fff; border: 1px solid var(--border-light); border-radius: var(--r);
+    padding: 20px; display: flex; flex-direction: column; gap: 10px;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--t-fast);
+  }
+  .report-tile:hover { box-shadow: var(--shadow); }
+  .report-tile h4 { margin: 0; color: var(--accent); font-size: 15px; }
+  .report-tile .desc { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .report-tile .actions { display: flex; gap: 8px; margin-top: auto; }
+
+  .msg-box {
+    background: #fdfbf5; border: 1px solid var(--gold-light);
+    border-radius: var(--r); padding: 20px;
+    font-family: inherit; white-space: pre-wrap;
+    font-size: 14px; line-height: 1.9;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .report-preview {
+    background: #fff; border: 1px solid var(--border);
+    border-radius: var(--r); padding: 28px;
+    margin-top: 20px; box-shadow: var(--shadow);
+  }
+  .report-preview h2 {
+    color: var(--accent); margin: 0 0 4px;
+    font-size: 22px; font-weight: 700;
+  }
+  .report-preview .subhead {
+    color: var(--muted); font-size: 13px; margin-bottom: 18px;
+    padding-bottom: 14px; border-bottom: 1px solid var(--border-light);
+  }
+  .report-preview table th { background: var(--accent); color: #fff; }
+  .report-preview .report-footer {
+    margin-top: 24px; padding-top: 14px;
+    border-top: 2px solid var(--accent);
+    font-size: 12px; color: var(--muted);
+    display: flex; justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar no-print">
+  <h1>📄 التقارير والرسائل</h1>
+  <div class="right">
+    <a href="home.html">الرئيسية</a>
+    <a href="admin.html" class="hide-mobile">إدارة</a>
+    <a href="closure.html" class="hide-mobile">إقفال</a>
+    <a onclick="createFullBackup()" class="btn-backup">💾 Backup</a>
+    <span class="logout" onclick="logout()">خروج</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="card card-tight flex gap no-print">
+    <label style="margin:0">الشهر:</label>
+    <input type="text" id="monthInput" value="2026-11" style="width:120px">
+    <button class="btn-small" onclick="loadMonth()">تحميل</button>
+    <div class="spacer"></div>
+    <span class="text-sm" id="monthStatus"></span>
+  </div>
+
+  <div class="report-grid no-print" id="tileGrid"></div>
+
+  <div id="previewArea"></div>
+
+</div>
+
+<script src="config.js"></script>
+<script>
+if (!checkAuth()) throw new Error('auth');
+initFirebase();
+
+let CURRENT_MONTH = '2026-11', monthData = null;
+
+async function loadMonth() {
+  CURRENT_MONTH = document.getElementById('monthInput').value;
+  const snap = await ref(`months/${CURRENT_MONTH}`).once('value');
+  monthData = snap.val();
+  const st = document.getElementById('monthStatus');
+  if (!monthData) {
+    st.innerHTML = '<span style="color:var(--danger)">⚠️ لا بيانات</span>';
+    document.getElementById('tileGrid').innerHTML = '';
+    document.getElementById('previewArea').innerHTML = '';
+    return;
+  }
+  st.innerHTML = `<b>${arabicMonth(CURRENT_MONTH)}</b> — ${monthData.status === 'closed' ? '✓ مقفل' : '📝 مسودة'}`;
+  renderTiles();
+}
+
+function renderTiles() {
+  const t = monthData.totals || {};
+  const byArea = (t.by_area)||{};
+
+  document.getElementById('tileGrid').innerHTML = `
+    ${['الصف','كفر_علو','المعصرة','أماكن_أخرى'].map(a => `
+      <div class="report-tile">
+        <h4>📋 تقرير ${areaDisplay(a)}</h4>
+        <div class="desc">قائمة كاملة بالأولياء والأطفال و المبالغ — ${fmt(byArea[a]?.total||0)} جنيه</div>
+        <div class="actions">
+          <button class="btn-small" onclick="renderAreaReport('${a}', false)">معاينة</button>
+          <button class="btn-small" onclick="renderAreaReport('${a}', true)">نسخة للمشاركة</button>
+        </div>
+      </div>
+    `).join('')}
+    <div class="report-tile" style="background: linear-gradient(135deg, var(--cream-deep) 0%, #fff 100%);">
+      <h4>💬 رسالة نشوى الشهرية</h4>
+      <div class="desc">رسالة واتساب جاهزة — خطة التحويل + ملخص الصدقات والزكاة + تعديلات الشهر</div>
+      <div class="actions">
+        <button class="btn-gold btn-small" onclick="renderNashwaMsg()">عرض ونسخ</button>
+      </div>
+    </div>
+    <div class="report-tile" style="background: linear-gradient(135deg, var(--cream-deep) 0%, #fff 100%);">
+      <h4>💬 ملخصات المشايخ</h4>
+      <div class="desc">رسالة قصيرة لكل شيخ بتعديلات منطقته</div>
+      <div class="actions">
+        <button class="btn-gold btn-small" onclick="renderSheikhMsgs()">عرض الكل</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderAreaReport(area, toShare) {
+  const snapshot = (monthData.snapshot && monthData.snapshot.kafalat) || {};
+  const people = (monthData.snapshot && monthData.snapshot.people) || {};
+  const state = monthData.closure_state || {};
+  const dist = state.zakat_distribution || {};
+
+  // Group by guardian
+  const byGuardian = {};
+  Object.values(snapshot).forEach(k => {
+    if (k.area !== area || k.status !== 'active') return;
+    const guardianId = k.guardian_id;
+    if (!guardianId) return;
+    const guardian = (people[guardianId]||{}).name || '—';
+    if (!byGuardian[guardian]) byGuardian[guardian] = {kafalat: [], total: 0, guardian_id: guardianId};
+
+    (k.funding||[]).forEach(f => {
+      if (f.prepaid_through && f.prepaid_through >= CURRENT_MONTH) return;
+      const kafeelName = f.source === 'sadaqat' ? 'صدقات' : f.source === 'zakat' ? 'زكاة' : (people[f.kafeel_id]||{}).name || '—';
+      byGuardian[guardian].kafalat.push({
+        child: k.child, kafeel: kafeelName, amount: f.amount, source: f.source
+      });
+      byGuardian[guardian].total += f.amount;
+    });
+  });
+
+  // Add zakat distributions
+  Object.entries(dist).forEach(([gid, amt]) => {
+    const guardian = (people[gid]||{}).name;
+    const kafala = Object.values(snapshot).find(k => k.guardian_id === gid);
+    if (!guardian || !kafala || kafala.area !== area) return;
+    if (!byGuardian[guardian]) byGuardian[guardian] = {kafalat: [], total: 0, guardian_id: gid};
+    byGuardian[guardian].zakat = amt;
+    byGuardian[guardian].total += amt;
+  });
+
+  const sorted = Object.entries(byGuardian).sort((a,b) => a[0].localeCompare(b[0]));
+
+  let rows = '';
+  let grandTotal = 0;
+  sorted.forEach(([guardian, data]) => {
+    const kids = data.kafalat;
+    const rowCount = kids.length + (data.zakat?1:0);
+    kids.forEach((k,i) => {
+      rows += `<tr>
+        ${i===0?`<td rowspan="${rowCount}" style="font-weight:600">${guardian}</td>`:''}
+        <td>${k.child||'—'}</td>
+        <td>${k.kafeel}</td>
+        <td class="font-mono">${fmt(k.amount)}</td>
+      </tr>`;
+      grandTotal += k.amount;
+    });
+    if (data.zakat) {
+      rows += `<tr><td>—</td><td><i>زكاة الشهر</i></td><td class="font-mono">${fmt(data.zakat)}</td></tr>`;
+      grandTotal += data.zakat;
+    }
+    rows += `<tr style="background:var(--cream-deep);font-weight:700"><td colspan="3" style="text-align:left">إجمالي ${guardian}</td><td class="font-mono">${fmt(data.total)}</td></tr>`;
+  });
+
+  document.getElementById('previewArea').innerHTML = `
+    <div class="report-preview">
+      <h2>تقرير ${areaDisplay(area)} — ${arabicMonth(CURRENT_MONTH)}</h2>
+      <div class="subhead">
+        عدد الأولياء: <b>${sorted.length}</b> ·
+        عدد الكفالات: <b>${sorted.reduce((s,[,d])=>s+d.kafalat.length,0)}</b>
+      </div>
+      <table>
+        <thead><tr>
+          <th>ولي الأمر</th><th>الطفل</th><th>الكفيل</th><th>المبلغ</th>
+        </tr></thead>
+        <tbody>${rows}
+          <tr style="background:var(--accent);color:#fff;font-weight:700">
+            <td colspan="3">الإجمالي</td>
+            <td class="font-mono">${fmt(grandTotal)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="report-footer">
+        <span>نظام خدمة v2 · ${arabicMonth(CURRENT_MONTH)}</span>
+        <span>طُبع في ${new Date().toLocaleDateString('ar-EG')}</span>
+      </div>
+      <div class="no-print flex gap mt" style="justify-content:center">
+        <button onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+      </div>
+    </div>
+  `;
+  scrollTo(0, document.getElementById('previewArea').offsetTop - 20);
+}
+
+function renderNashwaMsg() {
+  const t = monthData.totals || {};
+  const byArea = t.by_area || {};
+  const state = monthData.closure_state || {};
+  const edits = monthData.edits ? Object.values(monthData.edits) : [];
+
+  let areaLines = '';
+  ['الصف','كفر_علو','المعصرة','أماكن_أخرى'].forEach(a => {
+    const total = byArea[a]?.total || 0;
+    if (total) areaLines += `• ${areaDisplay(a)}: ${fmt(total)}\n`;
+  });
+
+  const kafrFee = state.include_fee ?
+    `+ ${fmt(Math.round((byArea['كفر_علو']?.total||0) * 0.01))} رسوم ١٪ كفر علو\n` : '';
+
+  const zakatUsed = Object.values(state.zakat_distribution||{}).reduce((a,b)=>a+b,0);
+  const zakatMothers = Object.keys(state.zakat_distribution||{}).length;
+
+  const editsSummary = edits.length > 0 ?
+    `\n*تعديلات الشهر:*\n${edits.map(e => `• ${e.target_label}: ${e.description||''}`).join('\n')}` : '';
+
+  const msg = `*السلام عليكم ورحمة الله وبركاته*
+*ملخص إقفال ${arabicMonth(CURRENT_MONTH)}*
+
+━━━━━━━━━━━━━━
+*خطة التحويل* 📊
+${areaLines}${kafrFee}
+الإجمالي الكلي: *${fmt(t.grand)}*
+نصيبك: *${fmt(t.nashwa)}*
+نصيبي: *${fmt(t.youssef)}*
+
+━━━━━━━━━━━━━━
+*بركة الصدقات* 🤲
+المدخلات الثابتة: ${fmt(state.fixed_sadaqat||4550)}
+من مبلغك للصدقات: ${fmt(state.sadaqat_to_pool||0)}
+
+*الزكاة* 💰
+المتاح للتوزيع: ${fmt(state.zakat_remaining||0)}
+الموزع: ${fmt(zakatUsed)} على ${zakatMothers} أم (${fmt(state.zakat_share||300)} جنيه لكل)
+${editsSummary}
+
+━━━━━━━━━━━━━━
+جزاكم الله خيراً 🌸`;
+
+  document.getElementById('previewArea').innerHTML = `
+    <div class="card">
+      <div class="flex-between mb-sm">
+        <h3 style="margin:0">💬 رسالة نشوى</h3>
+        <button class="btn-gold" onclick="copyText('nashwaMsg')">📋 نسخ</button>
+      </div>
+      <div class="msg-box" id="nashwaMsg">${msg}</div>
+    </div>
+  `;
+  scrollTo(0, document.getElementById('previewArea').offsetTop - 20);
+}
+
+function renderSheikhMsgs() {
+  const t = monthData.totals || {};
+  const byArea = t.by_area || {};
+  const snapshot = (monthData.snapshot && monthData.snapshot.kafalat) || {};
+  const edits = monthData.edits ? Object.values(monthData.edits) : [];
+
+  let html = '';
+  ['الصف','كفر_علو','المعصرة','أماكن_أخرى'].forEach(a => {
+    const total = byArea[a]?.total || 0;
+    if (!total) return;
+
+    const areaEdits = edits.filter(e => {
+      const k = snapshot[e.target_id];
+      return k && k.area === a;
+    });
+
+    const editsText = areaEdits.length ?
+      '\n*تعديلات الشهر:*\n' + areaEdits.map(e => `• ${e.target_label}: ${e.description||''}`).join('\n') :
+      '\nلا توجد تعديلات هذا الشهر';
+
+    const msg = `*السلام عليكم ورحمة الله*
+*ملخص ${arabicMonth(CURRENT_MONTH)} - منطقة ${areaDisplay(a)}*
+
+إجمالي المنطقة: *${fmt(total)}* جنيه
+${editsText}
+
+جزاكم الله خيراً 🌸`;
+
+    html += `<div class="card">
+      <div class="flex-between mb-sm">
+        <h3 style="margin:0">💬 شيخ ${areaDisplay(a)}</h3>
+        <button class="btn-gold btn-small" onclick="copyText('msg_${a}')">📋 نسخ</button>
+      </div>
+      <div class="msg-box" id="msg_${a}">${msg}</div>
+    </div>`;
+  });
+
+  document.getElementById('previewArea').innerHTML = html;
+  scrollTo(0, document.getElementById('previewArea').offsetTop - 20);
+}
+
+function copyText(id) {
+  const t = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(t).then(() => toast('✓ تم النسخ', 'success'));
+}
+
+loadMonth();
+</script>
+</body>
+</html>

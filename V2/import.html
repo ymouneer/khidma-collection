@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>الاستيراد الأولي — v2</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>🚀 الاستيراد الأولي</h1>
+  <div class="right">
+    <a href="home.html">الرئيسية</a>
+    <span class="logout" onclick="logout()">خروج</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="card" style="background:var(--warn-light);border-right:4px solid var(--warn)">
+    <h3 style="color:#6d4e00;margin-top:0">⚠️ صفحة لمرة واحدة فقط</h3>
+    <p style="color:#6d4e00" class="text-sm">
+      تستورد بيانات <code>migrated_data.json</code> إلى <code>/khidma_v2/</code> في Firebase.
+      <br>البيانات الحالية في <code>/khidma/</code> و <code>/nashwa_collection/</code> لا تتأثر.
+      <br><br>
+      <b>قبل الاستيراد:</b> تأكد أنك أجريت backup من v1 أولاً.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">الخطوات</h3>
+    <ol>
+      <li>اختر ملف <code>migrated_data.json</code> من جهازك</li>
+      <li>راجع المعاينة (عدد الأشخاص والكفالات)</li>
+      <li>اضغط "استيراد" - يُكتب إلى <code>/khidma_v2/</code></li>
+      <li>التحقق النهائي يُعرض</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <input type="file" id="file" accept=".json" onchange="previewFile()">
+    <div id="preview"></div>
+  </div>
+
+</div>
+
+<div id="modalContainer"></div>
+
+<script src="config.js"></script>
+<script>
+if (!checkAuth()) throw new Error('auth');
+initFirebase();
+
+let importData = null;
+
+async function previewFile() {
+  const file = document.getElementById('file').files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    importData = data.khidma_v2 || data;
+
+    const p = document.getElementById('preview');
+    p.innerHTML = `
+      <h3>معاينة البيانات</h3>
+      <div class="stats">
+        <div class="stat"><div class="label">الأشخاص</div><div class="value">${Object.keys(importData.people||{}).length}</div></div>
+        <div class="stat"><div class="label">الكفالات</div><div class="value">${Object.keys(importData.kafalat||{}).length}</div></div>
+        <div class="stat"><div class="label">الشهور</div><div class="value">${Object.keys(importData.months||{}).length}</div></div>
+        <div class="stat"><div class="label">مجموع funding</div><div class="value">${Object.values(importData.kafalat||{}).reduce((s,k)=>s+(k.funding||[]).length,0)}</div></div>
+      </div>
+      <div class="flex gap mt-lg">
+        <button onclick="doImport()" class="btn-gold btn-lg">🚀 استيراد إلى Firebase</button>
+        <button onclick="document.getElementById('file').value='';document.getElementById('preview').innerHTML=''" class="btn-ghost">إلغاء</button>
+      </div>
+    `;
+  } catch(e) {
+    toast('ملف غير صالح: ' + e.message, 'error');
+  }
+}
+
+async function doImport() {
+  // Safety check: is /khidma_v2/ already populated?
+  const existing = await ref('kafalat').once('value');
+  const existingCount = Object.keys(existing.val()||{}).length;
+
+  const ok = await confirmImpact({
+    title: existingCount > 0 ? '⚠️ /khidma_v2/ يحتوي بيانات!' : 'استيراد البيانات',
+    message: existingCount > 0 ?
+      `يوجد ${existingCount} كفالة في /khidma_v2/. الاستيراد سيستبدلها.` :
+      'سيتم كتابة البيانات في /khidma_v2/ في Firebase.',
+    impact: [
+      `${Object.keys(importData.people||{}).length} شخص`,
+      `${Object.keys(importData.kafalat||{}).length} كفالة`,
+      `${Object.keys(importData.months||{}).length} شهر`,
+      'المسارات الأخرى في Firebase لا تتأثر',
+      existingCount > 0 ? '<b>البيانات الحالية في khidma_v2 ستُفقد</b>' : ''
+    ].filter(x=>x),
+    danger: existingCount > 0
+  });
+  if (!ok) return;
+
+  if (existingCount > 0) {
+    const pw = prompt('اكتب "استيراد" للتأكيد:');
+    if (pw !== 'استيراد') { toast('ألغي', 'info'); return; }
+  }
+
+  toast('جاري الاستيراد...', 'info');
+
+  try {
+    // Write each section separately (safer than full /khidma_v2 set)
+    await ref('people').set(importData.people || {});
+    await ref('kafalat').set(importData.kafalat || {});
+    await ref('months').set(importData.months || {});
+    await ref('config').set(importData.config || {});
+    await ref('_meta').set(importData._meta || {});
+
+    await auditLog('import_v2', '/khidma_v2', null, {
+      people: Object.keys(importData.people||{}).length,
+      kafalat: Object.keys(importData.kafalat||{}).length,
+    });
+
+    // Verification
+    const verify = await ref('kafalat').once('value');
+    const vCount = Object.keys(verify.val()||{}).length;
+    const expected = Object.keys(importData.kafalat||{}).length;
+
+    if (vCount === expected) {
+      toast(`✓ تم: ${vCount} كفالة مستوردة`, 'success');
+      setTimeout(() => location.href = 'home.html', 2000);
+    } else {
+      toast(`⚠️ عدم تطابق: متوقع ${expected}، فعلي ${vCount}`, 'warn');
+    }
+  } catch(e) {
+    toast('فشل: ' + e.message, 'error');
+  }
+}
+</script>
+</body>
+</html>

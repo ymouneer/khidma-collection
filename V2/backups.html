@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>النسخ الاحتياطية — v2</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>💾 النسخ الاحتياطية</h1>
+  <div class="right">
+    <a href="home.html">الرئيسية</a>
+    <a href="admin.html" class="hide-mobile">إدارة</a>
+    <a href="closure.html" class="hide-mobile">إقفال</a>
+    <span class="logout" onclick="logout()">خروج</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="card" style="text-align:center">
+    <h3 style="margin-top:0">إنشاء نسخة احتياطية جديدة</h3>
+    <p class="text-muted">نسخة كاملة لـ <code>khidma_v2</code> - تُحفظ في Firebase وتُحمَّل على جهازك.</p>
+    <div class="flex gap" style="justify-content:center;margin-top:14px">
+      <button onclick="createFullBackup()" class="btn-gold btn-lg">💾 Backup Now + تحميل</button>
+      <button onclick="createFullBackup({snapshotOnly:true})" class="btn-secondary">☁️ Snapshot فقط</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">📜 السجل (آخر ٢٠ نسخة)</h3>
+    <div id="backupList">جاري التحميل...</div>
+  </div>
+
+  <div class="card" style="background:var(--warn-light);border-right:4px solid var(--warn)">
+    <h3 style="color:#6d4e00;margin-top:0">⚠️ قبل الاسترداد</h3>
+    <p style="color:#6d4e00" class="text-sm">
+      الاسترداد يستبدل البيانات الحالية. سيتم عمل backup حالي تلقائياً كـ safety قبل الاسترداد.
+    </p>
+  </div>
+
+</div>
+
+<div id="modalContainer"></div>
+
+<script src="config.js"></script>
+<script>
+if (!checkAuth()) throw new Error('auth');
+initFirebase();
+
+async function loadBackups() {
+  try {
+    const snap = await ref('backups').orderByKey().limitToLast(20).once('value');
+    const data = snap.val() || {};
+    const list = Object.entries(data).map(([id, b]) => ({id, ...b})).reverse();
+
+    const el = document.getElementById('backupList');
+    if (list.length === 0) {
+      el.innerHTML = '<div class="text-muted" style="padding:30px;text-align:center">لا توجد نسخ احتياطية. اضغط Backup Now.</div>';
+      return;
+    }
+    el.innerHTML = `<table>
+      <thead><tr><th>التاريخ والوقت</th><th>أشخاص</th><th>كفالات</th><th>شهور</th><th>إجراءات</th></tr></thead>
+      <tbody>${list.map(b => `
+        <tr>
+          <td>${new Date(b.ts).toLocaleString('ar-EG')}</td>
+          <td>${b.counts?.people||'?'}</td>
+          <td>${b.counts?.kafalat||'?'}</td>
+          <td>${b.counts?.months||'?'}</td>
+          <td>
+            <button class="btn-small" onclick="downloadBackup('${b.id}')">تحميل</button>
+            <button class="btn-small btn-danger" onclick="restoreBackup('${b.id}')">استرداد</button>
+          </td>
+        </tr>`).join('')}</tbody></table>`;
+  } catch(e) {
+    document.getElementById('backupList').innerHTML = '<div style="color:var(--danger)">خطأ: ' + e.message + '</div>';
+  }
+}
+
+async function downloadBackup(id) {
+  const snap = await ref(`backups/${id}/snapshot`).once('value');
+  const data = snap.val();
+  if (!data) return toast('لا snapshot', 'error');
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `khidma-v2-${id}.json`;
+  a.click();
+  toast('✓ تم التحميل', 'success');
+}
+
+async function restoreBackup(id) {
+  const ok = await confirmImpact({
+    title: '⚠️ استرداد نسخة احتياطية',
+    message: `سيتم استبدال كل بيانات khidma_v2 بـ ${id}.`,
+    impact: [
+      'كل الكفالات الحالية ستُستبدل',
+      'كل الأشخاص ستُستبدل',
+      'كل الشهور المقفلة ستُستبدل',
+      'backup حالي سيُحفظ تلقائياً قبل الاسترداد',
+      '<b style="color:var(--danger)">غير قابل للتراجع</b>'
+    ],
+    danger: true
+  });
+  if (!ok) return;
+
+  toast('حفظ نسخة حالية أولاً...', 'info');
+  await createFullBackup({snapshotOnly: true});
+
+  const pw = prompt('اكتب "استرداد" للتأكيد:');
+  if (pw !== 'استرداد') { toast('ألغي', 'info'); return; }
+
+  try {
+    const snap = await ref(`backups/${id}/snapshot`).once('value');
+    const data = snap.val();
+    if (!data) throw new Error('snapshot غير موجود');
+    await ref('').set(data);
+    await auditLog('restore_backup', `backups/${id}`, null, {id});
+    toast('✓ تم - جاري إعادة التحميل', 'success');
+    setTimeout(() => location.reload(), 1500);
+  } catch(e) {
+    toast('فشل: ' + e.message, 'error');
+  }
+}
+
+loadBackups();
+</script>
+</body>
+</html>

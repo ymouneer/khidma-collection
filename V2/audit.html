@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>سجل التغييرات — v2</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>📜 سجل التغييرات</h1>
+  <div class="right">
+    <a href="home.html">الرئيسية</a>
+    <a href="admin.html" class="hide-mobile">إدارة</a>
+    <a onclick="createFullBackup()" class="btn-backup">💾 Backup</a>
+    <span class="logout" onclick="logout()">خروج</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="card">
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="بحث..." oninput="render()">
+      <select id="filterAction" onchange="render()">
+        <option value="">كل الإجراءات</option>
+        <option value="kafala">تعديل كفالة</option>
+        <option value="edit">تعديلات شهرية</option>
+        <option value="backup">النسخ الاحتياطية</option>
+        <option value="close">إقفال شهر</option>
+      </select>
+      <div class="spacer"></div>
+      <span class="text-sm text-muted" id="countInfo">—</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>الوقت</th>
+          <th>الإجراء</th>
+          <th>المسار</th>
+          <th>قبل</th>
+          <th>بعد</th>
+        </tr></thead>
+        <tbody id="auditBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script src="config.js"></script>
+<script>
+if (!checkAuth()) throw new Error('auth');
+initFirebase();
+
+let allAudit = [];
+
+async function load() {
+  const snap = await ref('audit').orderByChild('ts').limitToLast(500).once('value');
+  const data = snap.val() || {};
+  allAudit = Object.entries(data).map(([id, e]) => ({id, ...e})).sort((a,b) => b.ts - a.ts);
+  render();
+}
+
+function render() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const filter = document.getElementById('filterAction').value;
+
+  let items = allAudit;
+  if (filter) items = items.filter(a => a.action && a.action.includes(filter));
+  if (q) items = items.filter(a =>
+    (a.action||'').toLowerCase().includes(q) ||
+    (a.path||'').toLowerCase().includes(q)
+  );
+
+  document.getElementById('auditBody').innerHTML = items.slice(0, 200).map(a => `
+    <tr>
+      <td class="text-xs text-muted" style="white-space:nowrap">${new Date(a.ts).toLocaleString('ar-EG')}</td>
+      <td><span class="badge">${a.action}</span></td>
+      <td class="text-xs font-mono" style="color:var(--muted)">${a.path||'—'}</td>
+      <td class="text-xs">${a.before ? JSON.stringify(a.before).slice(0,80) : '—'}</td>
+      <td class="text-xs">${a.after ? JSON.stringify(a.after).slice(0,80) : '—'}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('countInfo').textContent = `${items.length} / ${allAudit.length}`;
+}
+
+load();
+</script>
+</body>
+</html>

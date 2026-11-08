@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تحصيل الكفالات</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+  body {
+    background: linear-gradient(180deg, #e8f0eb 0%, var(--cream) 100%);
+  }
+  .welcome-hero {
+    text-align: center; padding: 40px 20px 20px;
+  }
+  .welcome-hero .leaf { font-size: 32px; color: var(--accent); }
+  .welcome-hero h1 {
+    font-size: 26px; color: var(--accent); margin: 10px 0 6px;
+    font-weight: 700;
+  }
+  .welcome-hero .greeting { color: var(--muted); font-size: 14px; }
+
+  .month-switch {
+    display: flex; gap: 10px; justify-content: center;
+    margin: 20px 0;
+    flex-wrap: wrap;
+  }
+  .month-btn {
+    padding: 12px 28px; background: #fff; border: 2px solid var(--border);
+    border-radius: var(--r); cursor: pointer; font-size: 14px;
+    text-align: center; min-width: 140px;
+    transition: all var(--t-fast);
+    font-family: inherit;
+  }
+  .month-btn:hover { border-color: var(--accent); }
+  .month-btn.active {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+    box-shadow: var(--shadow);
+  }
+  .month-btn .label { font-weight: 700; font-size: 16px; margin-bottom: 2px; }
+  .month-btn .amount { font-size: 11.5px; opacity: 0.8; }
+
+  .progress-section {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+    color: #fff; padding: 24px; border-radius: var(--r-lg);
+    box-shadow: var(--shadow);
+    margin-bottom: 20px;
+  }
+  .progress-section .title { font-size: 14px; opacity: 0.9; margin-bottom: 8px; }
+  .progress-section .main { font-size: 28px; font-weight: 800; }
+  .progress-bar {
+    height: 10px; background: rgba(255,255,255,0.2); border-radius: 10px;
+    overflow: hidden; margin: 14px 0 10px;
+  }
+  .progress-bar .fill {
+    height: 100%; background: var(--gold); border-radius: 10px;
+    transition: width 600ms cubic-bezier(.4,0,.2,1);
+  }
+  .progress-stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    margin-top: 14px; font-size: 13px;
+  }
+  .progress-stats .box { text-align: center; }
+  .progress-stats .box .num { font-size: 20px; font-weight: 700; }
+  .progress-stats .box .lbl { opacity: 0.8; font-size: 11px; margin-top: 2px; }
+
+  .pt-list { display: flex; flex-direction: column; gap: 10px; }
+  .pt-card {
+    background: #fff; border: 1px solid var(--border-light);
+    border-radius: var(--r); overflow: hidden;
+    box-shadow: var(--shadow-sm); transition: all var(--t-fast);
+  }
+  .pt-card:hover { box-shadow: var(--shadow); }
+  .pt-card.expanded { border-color: var(--accent); }
+  .pt-header {
+    padding: 14px 18px; cursor: pointer;
+    display: flex; align-items: center; gap: 12px;
+    transition: background var(--t-fast);
+  }
+  .pt-header:hover { background: var(--cream); }
+  .pt-indicator {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--border); flex-shrink: 0;
+  }
+  .pt-indicator.paid { background: var(--success); }
+  .pt-indicator.partial { background: var(--gold); }
+  .pt-indicator.unpaid { background: var(--danger); }
+  .pt-indicator.prepaid { background: var(--info); }
+  .pt-name { flex: 1; font-weight: 600; }
+  .pt-amount { font-size: 13px; color: var(--muted); font-feature-settings: "tnum"; }
+  .pt-chevron { color: var(--muted-light); transition: transform var(--t-fast); }
+  .pt-card.expanded .pt-chevron { transform: rotate(180deg); }
+
+  .pt-body {
+    display: none; padding: 0 18px 18px;
+    border-top: 1px solid var(--border-light);
+  }
+  .pt-card.expanded .pt-body { display: block; }
+
+  .kafeel-row {
+    padding: 12px 0; display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px dashed var(--border-light);
+  }
+  .kafeel-row:last-child { border-bottom: none; }
+  .kafeel-check {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--cream-deep); border: 2px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all var(--t-fast);
+    flex-shrink: 0; font-size: 14px;
+  }
+  .kafeel-check:hover { border-color: var(--accent); }
+  .kafeel-check.paid {
+    background: var(--success); border-color: var(--success); color: #fff;
+  }
+  .kafeel-check.unpaid {
+    background: var(--danger); border-color: var(--danger); color: #fff;
+  }
+  .kafeel-check.prepaid {
+    background: var(--info); border-color: var(--info); color: #fff;
+  }
+  .kafeel-info { flex: 1; }
+  .kafeel-name { font-weight: 600; font-size: 14px; }
+  .kafeel-detail { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .kafeel-amount {
+    font-weight: 700; font-size: 14px; color: var(--accent);
+    font-feature-settings: "tnum";
+  }
+
+  .search-wrap {
+    position: relative; margin-bottom: 14px;
+  }
+  .search-wrap input {
+    padding: 10px 40px 10px 14px;
+    background: #fff; font-size: 14px;
+  }
+  .search-wrap::before {
+    content: '🔍'; position: absolute; left: 14px; top: 50%;
+    transform: translateY(-50%); opacity: 0.4;
+  }
+
+  .cloud-status {
+    position: fixed; bottom: 20px; left: 20px;
+    padding: 8px 14px; background: #fff;
+    border-radius: 20px; font-size: 12px;
+    box-shadow: var(--shadow); color: var(--muted);
+    z-index: 50;
+  }
+  .cloud-status.ok { color: var(--success); }
+  .cloud-status.saving { color: var(--gold); }
+  .cloud-status.offline { color: var(--danger); }
+
+  .salawat-banner {
+    text-align: center; color: var(--gold);
+    padding: 10px; font-size: 14px;
+    background: var(--cream-deep); border-radius: var(--r-sm);
+    margin-bottom: 14px;
+    transition: opacity 300ms;
+  }
+
+  .salawat-popup {
+    position: fixed; inset: 0;
+    background: rgba(10,26,20,0.65); backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 500; padding: 20px;
+    animation: fadeIn 300ms ease;
+    cursor: pointer;
+  }
+  .salawat-popup .inner {
+    background: linear-gradient(135deg, #fff 0%, var(--cream) 100%);
+    padding: 36px 32px; border-radius: 20px;
+    text-align: center; max-width: 420px;
+    box-shadow: var(--shadow-xl);
+  }
+  .salawat-popup .inner .icon { font-size: 44px; color: var(--gold); margin-bottom: 14px; }
+  .salawat-popup .inner .text { font-size: 20px; color: var(--accent); font-weight: 600; line-height: 1.6; }
+  .salawat-popup .inner .dismiss { font-size: 11px; color: var(--muted); margin-top: 20px; }
+
+  .offline-banner {
+    position: fixed; top: 0; left: 0; right: 0;
+    background: var(--danger); color: #fff;
+    padding: 10px 20px; text-align: center;
+    font-size: 13px; z-index: 300;
+    animation: slideDown 300ms;
+  }
+  @keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+
+  .notes-section {
+    margin-top: 14px; padding: 12px;
+    background: var(--cream-deep); border-radius: var(--r-sm);
+  }
+  .notes-section label { font-size: 12px; color: var(--muted); margin-bottom: 4px; display: block; }
+  .notes-section textarea {
+    width: 100%; min-height: 60px; font-family: inherit;
+    font-size: 13px; padding: 8px 12px; resize: vertical;
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+  }
+
+  .submit-btn {
+    position: fixed; bottom: 70px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--gold); color: var(--ink);
+    padding: 12px 24px; border-radius: 24px;
+    font-weight: 700; font-size: 14px;
+    cursor: pointer; border: none;
+    box-shadow: var(--shadow-lg);
+    display: none;
+    z-index: 40;
+  }
+  .submit-btn.show { display: inline-flex; }
+  .submit-btn:hover { transform: translateX(-50%) translateY(-2px); background: var(--gold-light); }
+</style>
+</head>
+<body>
+
+<div class="container" style="max-width: 760px;">
+
+  <div class="welcome-hero">
+    <div class="leaf">🌿</div>
+    <h1 id="welcomeTitle">تحصيل الكفالات</h1>
+    <div class="greeting" id="welcomeGreeting">اللهم صلّ وسلم على سيدنا محمد ﷺ</div>
+  </div>
+
+  <div class="salawat-banner" id="salawat">اللهم صلّ على محمد و على آل محمد</div>
+
+  <div class="month-switch" id="monthSwitch"></div>
+
+  <div class="progress-section">
+    <div class="title" id="progressTitle">متابعة التحصيل</div>
+    <div class="main" id="progressMain">—</div>
+    <div class="progress-bar"><div class="fill" id="progressFill" style="width:0%"></div></div>
+    <div class="progress-stats">
+      <div class="box"><div class="num" id="statAll">—</div><div class="lbl">الكل</div></div>
+      <div class="box"><div class="num" id="statRemain">—</div><div class="lbl">متبقي</div></div>
+      <div class="box"><div class="num" id="statDone">—</div><div class="lbl">محصّل</div></div>
+      <div class="box"><div class="num" id="statPrepaid">—</div><div class="lbl">مقدماً</div></div>
+    </div>
+  </div>
+
+  <div class="search-wrap">
+    <input type="text" id="search" placeholder="بحث باسم مجموعة..." oninput="renderList()">
+  </div>
+
+  <div class="pt-list" id="ptList"></div>
+
+  <div style="height: 80px"></div>
+</div>
+
+<button class="submit-btn" id="submitBtn" onclick="submitProgress()">📨 إرسال التقدم</button>
+
+<div class="cloud-status" id="cloudStatus">⏳ جاري التحميل...</div>
+
+<script src="config.js"></script>
+<script>
+// NO AUTH for Nashwa's tool - it's her daily use
+initFirebase();
+
+let allKafalat = {}, allPeople = {}, state = {};
+let CURRENT_MONTH = '2026-11';
+let saveTimer = null;
+let syncingFromCloud = false;
+let firebaseReady = false;
+let interactionCount = 0;
+const SALAWAT_POPUP_EVERY = 20;  // Show salawat popup every N interactions
+
+// Salawat banner cycling
+const SALAWAT = [
+  'اللهم صلّ على سيدنا محمد وعلى آله وصحبه وسلم',
+  'اللهم صلّ على محمد و على آل محمد',
+  'صلى الله على محمد',
+  'اللهم صلّ وسلم وبارك على سيدنا محمد',
+  'صلى الله عليه وسلم',
+];
+let salawatIdx = 0;
+setInterval(() => {
+  salawatIdx = (salawatIdx + 1) % SALAWAT.length;
+  const el = document.getElementById('salawat');
+  el.style.opacity = '0';
+  setTimeout(() => { el.textContent = SALAWAT[salawatIdx]; el.style.opacity = '1'; }, 300);
+}, 10000);
+
+function setCloudStatus(type, msg) {
+  const el = document.getElementById('cloudStatus');
+  el.className = 'cloud-status ' + type;
+  el.textContent = msg;
+}
+
+async function load() {
+  setCloudStatus('saving', '⏳ تحميل البيانات...');
+  try {
+    [allKafalat, allPeople] = await Promise.all([fetchKafalat(), fetchPeople()]);
+    setupMonthSwitch();
+    await loadMonth();
+    setCloudStatus('ok', '☁️ متصل');
+    firebaseReady = true;
+
+    // Live listener
+    const mRef = ref(`months/${CURRENT_MONTH}/collection`);
+    mRef.on('value', snap => {
+      if (syncingFromCloud) return;
+      const val = snap.val();
+      if (val) { state = val; renderList(); renderProgress(); }
+    });
+  } catch(e) {
+    setCloudStatus('offline', '✗ خطأ: ' + e.message);
+    console.error(e);
+  }
+}
+
+function setupMonthSwitch() {
+  // Show current month + prev month
+  const now = new Date();
+  const curYm = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const prev = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  const prevYm = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
+
+  CURRENT_MONTH = curYm;
+  const months = [prevYm, curYm];
+
+  document.getElementById('monthSwitch').innerHTML = months.map(ym => `
+    <div class="month-btn ${ym===CURRENT_MONTH?'active':''}" onclick="switchMonth('${ym}')">
+      <div class="label">${arabicMonth(ym).split(' ')[0]}</div>
+      <div class="amount">${arabicMonth(ym).split(' ')[1]}</div>
+    </div>
+  `).join('');
+}
+
+function switchMonth(ym) {
+  CURRENT_MONTH = ym;
+  document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  loadMonth();
+}
+
+async function loadMonth() {
+  const snap = await ref(`months/${CURRENT_MONTH}/collection`).once('value');
+  state = snap.val() || {};
+  renderList();
+  renderProgress();
+}
+
+function getPTData() {
+  // Group kafalat by PT
+  const ptMap = {}; // pt_id → {pt, kafeels_group: {kafeel_id: {kafalat: [], total: 0}}}
+
+  Object.values(allKafalat).forEach(k => {
+    if (k.status !== 'active') return;
+    (k.funding || []).forEach(f => {
+      if (f.source !== 'kafeel' || !f.pt_id) return;
+      const ptId = f.pt_id;
+      const kId = f.kafeel_id;
+      if (!ptMap[ptId]) ptMap[ptId] = {pt_id: ptId, kafeels: {}};
+      if (!ptMap[ptId].kafeels[kId]) ptMap[ptId].kafeels[kId] = {kafeel_id: kId, kafalat: [], amount: 0, prepaid_through: null};
+      ptMap[ptId].kafeels[kId].kafalat.push({kafala: k, funding: f});
+      ptMap[ptId].kafeels[kId].amount += f.amount || 0;
+      if (f.prepaid_through && (!ptMap[ptId].kafeels[kId].prepaid_through || f.prepaid_through > ptMap[ptId].kafeels[kId].prepaid_through)) {
+        ptMap[ptId].kafeels[kId].prepaid_through = f.prepaid_through;
+      }
+    });
+  });
+
+  return Object.values(ptMap).map(pt => {
+    const person = allPeople[pt.pt_id] || {name: '?'};
+    return {
+      ...pt,
+      name: person.name,
+      total: Object.values(pt.kafeels).reduce((s,k) => s+k.amount, 0),
+      kafeel_list: Object.values(pt.kafeels)
+    };
+  }).sort((a,b) => a.name.localeCompare(b.name));
+}
+
+function getPtStatus(pt) {
+  const paidCount = pt.kafeel_list.filter(k => getKafeelStatus(pt.pt_id, k.kafeel_id, k) === 'paid').length;
+  const prepaidCount = pt.kafeel_list.filter(k => isKafeelPrepaid(k)).length;
+  const effective = pt.kafeel_list.length - prepaidCount;
+  if (effective === 0) return 'prepaid';
+  if (paidCount + prepaidCount === pt.kafeel_list.length) return 'paid';
+  if (paidCount > 0) return 'partial';
+  return 'unpaid';
+}
+
+function isKafeelPrepaid(kafeel) {
+  return kafeel.prepaid_through && kafeel.prepaid_through >= CURRENT_MONTH;
+}
+
+function getKafeelStatus(ptId, kafeelId, kafeelData) {
+  if (isKafeelPrepaid(kafeelData)) return 'prepaid';
+  const entry = state[ptId] && state[ptId].kafeel_payments && state[ptId].kafeel_payments[kafeelId];
+  if (!entry) return 'pending';
+  return entry.status;
+}
+
+function renderProgress() {
+  const pts = getPTData();
+  const total = pts.length;
+  let paid = 0, prepaid = 0, remain = 0;
+  let collectedAmount = 0, totalAmount = 0;
+
+  pts.forEach(pt => {
+    totalAmount += pt.total;
+    const st = getPtStatus(pt);
+    if (st === 'paid' || st === 'prepaid') {
+      paid++;
+      collectedAmount += pt.total;
+    }
+    if (st === 'prepaid') prepaid++;
+    if (st !== 'paid' && st !== 'prepaid') remain++;
+  });
+
+  const pct = total ? Math.round((paid / total) * 100) : 0;
+
+  document.getElementById('progressTitle').textContent = `${arabicMonth(CURRENT_MONTH)}`;
+  document.getElementById('progressMain').textContent = `${fmt(collectedAmount)} / ${fmt(totalAmount)} جنيه`;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('statAll').textContent = total;
+  document.getElementById('statRemain').textContent = remain;
+  document.getElementById('statDone').textContent = paid - prepaid;
+  document.getElementById('statPrepaid').textContent = prepaid;
+}
+
+function renderList() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  let pts = getPTData();
+  if (q) pts = pts.filter(p => p.name.toLowerCase().includes(q));
+
+  document.getElementById('ptList').innerHTML = pts.map(pt => {
+    const st = getPtStatus(pt);
+    return `<div class="pt-card" data-pt="${pt.pt_id}">
+      <div class="pt-header" onclick="togglePt('${pt.pt_id}')">
+        <div class="pt-indicator ${st}"></div>
+        <div class="pt-name">${pt.name}</div>
+        <div class="pt-amount">${fmt(pt.total)} جنيه</div>
+        <div class="pt-chevron">▼</div>
+      </div>
+      <div class="pt-body">
+        ${pt.kafeel_list.map(k => renderKafeel(pt.pt_id, k)).join('')}
+        <div class="notes-section">
+          <label>ملاحظات (اختيارية)</label>
+          <textarea placeholder="مثلاً: دفع نصف المبلغ، مؤجل لنهاية الشهر..." oninput="updateNote('${pt.pt_id}', this.value)">${(state[pt.pt_id]?.note)||''}</textarea>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Show submit button if any paid exists
+  const anyPaid = Object.values(state).some(s => (s||{}).overall_status === 'paid' || (s||{}).overall_status === 'partial');
+  if (anyPaid) document.getElementById('submitBtn').classList.add('show');
+}
+
+function renderKafeel(ptId, kafeel) {
+  const name = (allPeople[kafeel.kafeel_id]||{}).name || '?';
+  const status = getKafeelStatus(ptId, kafeel.kafeel_id, kafeel);
+  const prepaid = isKafeelPrepaid(kafeel);
+
+  const details = kafeel.kafalat.map(({kafala}) => kafala.child).filter(Boolean).join('، ');
+
+  let checkClass = '', checkIcon = '';
+  if (prepaid) { checkClass = 'prepaid'; checkIcon = '📅'; }
+  else if (status === 'paid') { checkClass = 'paid'; checkIcon = '✓'; }
+  else if (status === 'unpaid') { checkClass = 'unpaid'; checkIcon = '✗'; }
+
+  return `<div class="kafeel-row">
+    <div class="kafeel-check ${checkClass}" onclick="toggleKafeel('${ptId}','${kafeel.kafeel_id}')" ${prepaid?'style="cursor:default"':''}>
+      ${checkIcon}
+    </div>
+    <div class="kafeel-info">
+      <div class="kafeel-name">${name}</div>
+      <div class="kafeel-detail">
+        ${prepaid ? `مدفوع حتى ${arabicMonth(kafeel.prepaid_through)}` : details || 'لا تفاصيل'}
+      </div>
+    </div>
+    <div class="kafeel-amount">${fmt(kafeel.amount)}</div>
+  </div>`;
+}
+
+function togglePt(ptId) {
+  const card = document.querySelector(`[data-pt="${ptId}"]`);
+  card.classList.toggle('expanded');
+}
+
+async function toggleKafeel(ptId, kafeelId) {
+  const pt = getPTData().find(p => p.pt_id === ptId);
+  if (!pt) return;
+  const kafeel = pt.kafeel_list.find(k => k.kafeel_id === kafeelId);
+  if (!kafeel || isKafeelPrepaid(kafeel)) return;
+
+  const current = getKafeelStatus(ptId, kafeelId, kafeel);
+  const next = current === 'paid' ? 'unpaid' : current === 'unpaid' ? 'pending' : 'paid';
+
+  // CONFIRMATION before marking paid (critical action)
+  if (next === 'paid') {
+    const kafeelName = (allPeople[kafeelId]||{}).name || '?';
+    const ok = await confirmPayment('تأكيد الدفع', `هل استلمتي من ${kafeelName}؟`, `المبلغ: ${fmt(kafeel.amount)} جنيه`);
+    if (!ok) return;
+  }
+
+  if (!state[ptId]) state[ptId] = {kafeel_payments: {}};
+  if (!state[ptId].kafeel_payments) state[ptId].kafeel_payments = {};
+  if (next === 'pending') {
+    delete state[ptId].kafeel_payments[kafeelId];
+  } else {
+    state[ptId].kafeel_payments[kafeelId] = {status: next, paid_at: Date.now()};
+  }
+
+  const allPaid = pt.kafeel_list.every(k => {
+    if (isKafeelPrepaid(k)) return true;
+    const e = state[ptId].kafeel_payments[k.kafeel_id];
+    return e && e.status === 'paid';
+  });
+  state[ptId].overall_status = allPaid ? 'paid' : 'partial';
+
+  bumpInteraction();
+  renderList();
+  renderProgress();
+  save();
+
+  // Keep expanded + show submit button
+  setTimeout(() => {
+    const card = document.querySelector(`[data-pt="${ptId}"]`);
+    if (card) card.classList.add('expanded');
+    document.getElementById('submitBtn').classList.add('show');
+  }, 50);
+}
+
+function confirmPayment(title, msg, detail) {
+  return new Promise(resolve => {
+    const bg = document.createElement('div');
+    bg.className = 'modal-bg';
+    bg.innerHTML = `<div class="modal" style="max-width:380px;text-align:center">
+      <div style="font-size:36px;margin-bottom:10px">💰</div>
+      <h3 style="margin-top:0">${title}</h3>
+      <p style="color:var(--muted);font-size:14px">${msg}</p>
+      <div style="padding:12px;background:var(--cream-deep);border-radius:8px;margin:12px 0;font-weight:700;color:var(--accent)">${detail}</div>
+      <div class="modal-actions" style="justify-content:center">
+        <button id="_cpy">✓ نعم، تأكيد</button>
+        <button class="btn-ghost" id="_cpn">إلغاء</button>
+      </div></div>`;
+    document.body.appendChild(bg);
+    bg.querySelector('#_cpy').onclick = () => { bg.remove(); resolve(true); };
+    bg.querySelector('#_cpn').onclick = () => { bg.remove(); resolve(false); };
+  });
+}
+
+function updateNote(ptId, val) {
+  if (!state[ptId]) state[ptId] = {kafeel_payments: {}};
+  state[ptId].note = val;
+  save();
+}
+
+function bumpInteraction() {
+  interactionCount++;
+  if (interactionCount % SALAWAT_POPUP_EVERY === 0) showSalawatPopup();
+}
+
+function showSalawatPopup() {
+  const popup = document.createElement('div');
+  popup.className = 'salawat-popup';
+  popup.innerHTML = `<div class="inner">
+    <div class="icon">🌿</div>
+    <div class="text">${SALAWAT[Math.floor(Math.random()*SALAWAT.length)]}</div>
+    <div class="dismiss">اضغطي في أي مكان للإغلاق</div>
+  </div>`;
+  document.body.appendChild(popup);
+  popup.onclick = () => popup.remove();
+  setTimeout(() => { if (popup.parentNode) popup.remove(); }, 4500);
+}
+
+// Offline detection
+let offlineBanner = null;
+function showOffline() {
+  if (offlineBanner) return;
+  offlineBanner = document.createElement('div');
+  offlineBanner.className = 'offline-banner';
+  offlineBanner.textContent = '⚠️ لا يوجد اتصال - التحديثات لن تُحفظ';
+  document.body.appendChild(offlineBanner);
+}
+function hideOffline() { if (offlineBanner) { offlineBanner.remove(); offlineBanner = null; } }
+window.addEventListener('online', hideOffline);
+window.addEventListener('offline', showOffline);
+if (!navigator.onLine) showOffline();
+
+// Submit progress message
+function submitProgress() {
+  const pts = getPTData();
+  let paidTotal = 0, paidCount = 0;
+  const paidList = [];
+  pts.forEach(pt => {
+    const paidKafeels = pt.kafeel_list.filter(k => {
+      if (isKafeelPrepaid(k)) return false;
+      return getKafeelStatus(pt.pt_id, k.kafeel_id, k) === 'paid';
+    });
+    if (paidKafeels.length) {
+      const amt = paidKafeels.reduce((s,k) => s + k.amount, 0);
+      paidTotal += amt; paidCount += paidKafeels.length;
+      const noteText = state[pt.pt_id]?.note ? ` _(${state[pt.pt_id].note})_` : '';
+      paidList.push(`• ${pt.name}: ${fmt(amt)} جنيه${noteText}`);
+    }
+  });
+
+  const msg = `*التقدم في التحصيل - ${arabicMonth(CURRENT_MONTH)}*\n\nتم تحصيل ${fmt(paidTotal)} جنيه من ${paidCount} مجموعة:\n\n${paidList.join('\n')}\n\nجزاكم الله خيراً 🌸`;
+
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal">
+    <h3 style="margin-top:0">📨 رسالة التقدم</h3>
+    <div style="background:#fdfbf5;border:1px solid var(--gold-light);border-radius:10px;padding:14px;white-space:pre-wrap;font-size:13px;max-height:50vh;overflow:auto" id="_pm">${msg}</div>
+    <div class="modal-actions">
+      <button class="btn-gold" id="_cpy2">📋 نسخ</button>
+      <button class="btn-ghost" id="_cls2">إغلاق</button>
+    </div></div>`;
+  document.body.appendChild(bg);
+  bg.querySelector('#_cpy2').onclick = () => { navigator.clipboard.writeText(msg); toast('✓ نُسخ', 'success'); bg.remove(); };
+  bg.querySelector('#_cls2').onclick = () => bg.remove();
+}
+
+function save() {
+  setCloudStatus('saving', '⏳ جاري الحفظ...');
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    if (!firebaseReady) { setCloudStatus('offline', '✗ محفوظ محلياً'); return; }
+    try {
+      syncingFromCloud = true;
+      await ref(`months/${CURRENT_MONTH}/collection`).set(state);
+      await ref(`months/${CURRENT_MONTH}/last_update`).set(Date.now());
+      setCloudStatus('ok', '✓ محفوظ');
+      setTimeout(() => { syncingFromCloud = false; }, 200);
+    } catch(e) {
+      setCloudStatus('offline', '✗ فشل الحفظ');
+      syncingFromCloud = false;
+    }
+  }, 500);
+}
+
+load();
+</script>
+</body>
+</html>
