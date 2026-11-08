@@ -69,8 +69,7 @@
 
   <div class="card card-tight flex gap no-print">
     <label style="margin:0">الشهر:</label>
-    <input type="text" id="monthInput" value="2026-11" style="width:120px">
-    <button class="btn-small" onclick="loadMonth()">تحميل</button>
+    <select id="monthInput" style="min-width:220px" onchange="loadMonth()"></select>
     <div class="spacer"></div>
     <span class="text-sm" id="monthStatus"></span>
   </div>
@@ -88,8 +87,28 @@ initFirebase();
 
 let CURRENT_MONTH = '2026-11', monthData = null;
 
+async function populateMonthDropdown() {
+  const snap = await ref('months').once('value');
+  const months = snap.val() || {};
+  const existing = Object.keys(months);
+  const closed = existing.filter(m => months[m].status === 'closed').sort().reverse();
+  const draft = existing.filter(m => months[m].status !== 'closed').sort().reverse();
+  const opt = (ym, suffix='') => `<option value="${ym}" ${ym===CURRENT_MONTH?'selected':''}>${arabicMonth(ym)}${suffix}</option>`;
+  let html = '';
+  if (closed.length) html += `<optgroup label="🔒 مقفلة">${closed.map(m => opt(m, ' ✓')).join('')}</optgroup>`;
+  if (draft.length) html += `<optgroup label="📝 مسودة">${draft.map(m => opt(m, ' - مسودة')).join('')}</optgroup>`;
+  if (!html) html = '<option value="">لا توجد شهور</option>';
+  document.getElementById('monthInput').innerHTML = html;
+  // Pick first closed as default if current not available
+  if (!existing.includes(CURRENT_MONTH) && closed.length) {
+    CURRENT_MONTH = closed[0];
+    document.getElementById('monthInput').value = CURRENT_MONTH;
+  }
+}
+
 async function loadMonth() {
   CURRENT_MONTH = document.getElementById('monthInput').value;
+  if (!CURRENT_MONTH) return;
   const snap = await ref(`months/${CURRENT_MONTH}`).once('value');
   monthData = snap.val();
   const st = document.getElementById('monthStatus');
@@ -325,7 +344,10 @@ function copyText(id) {
   navigator.clipboard.writeText(t).then(() => toast('✓ تم النسخ', 'success'));
 }
 
-loadMonth();
+(async function init() {
+  await populateMonthDropdown();
+  await loadMonth();
+})();
 </script>
 </body>
 </html>
