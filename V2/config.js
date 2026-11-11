@@ -90,9 +90,9 @@ async function getMonthStatus(ym) {
 }
 
 /**
- * Renders the Smart Month Chip in the topbar using a native <select> for bulletproof UX.
+ * Renders the Smart Month Chip — a styled native <select> that always works.
  * container: DOM element ID (string) — a <span> or <div> in topbar .right
- * onChange(ym): callback when month changes
+ * onChange(ym): callback when month changes (falls back to location.reload)
  */
 async function renderMonthChip(containerId, onChange) {
   const el = document.getElementById(containerId);
@@ -100,17 +100,23 @@ async function renderMonthChip(containerId, onChange) {
   const active = getWorkingMonth();
   const real = currentMonth();
 
-  // Build 6 months: 3 past, current, 2 future
   const months = [];
   for (let i = -3; i <= 2; i++) months.push(addMonths(real, i));
 
-  // Get status for each (parallel)
-  const statusList = await Promise.all(months.map(m => getMonthStatus(m)));
+  let statusList;
+  try {
+    statusList = await Promise.all(months.map(m => getMonthStatus(m)));
+  } catch(e) {
+    // Fallback if Firebase not ready — use simple date-based status
+    statusList = months.map(m => m === real ? 'current' : (m < real ? 'past' : 'future'));
+  }
+
   const statusIcon = { closed: '🔒', past: '📄', current: '✅', future: '📅' };
   const statusText = { closed: 'مقفل', past: 'مسودة', current: 'الحالي', future: 'مستقبل' };
 
-  const activeStatus = statusList[months.indexOf(active)] || (active === real ? 'current' : (active < real ? 'past' : 'future'));
-  const borderColor = activeStatus === 'current' ? '#2d6a4f' : (activeStatus === 'closed' ? '#5a6b62' : (activeStatus === 'future' ? '#3b7a9e' : '#8b6a1e'));
+  const activeIdx = months.indexOf(active);
+  const activeStatus = (activeIdx >= 0 ? statusList[activeIdx] : null) || (active === real ? 'current' : (active < real ? 'past' : 'future'));
+  const borderColor = activeStatus === 'current' ? '#86efac' : (activeStatus === 'closed' ? '#cbd5e1' : (activeStatus === 'future' ? '#93c5fd' : '#fcd34d'));
 
   const opts = months.map((m, i) => {
     const s = statusList[i];
@@ -118,21 +124,22 @@ async function renderMonthChip(containerId, onChange) {
     return `<option value="${m}" ${sel}>${statusIcon[s]} ${arabicMonth(m)} — ${statusText[s]}</option>`;
   }).join('');
 
+  // Visible, standalone <select> styled to look like a chip — bulletproof
   el.innerHTML = `
-    <label class="month-chip-wrap" style="
-      display:inline-flex;align-items:center;gap:6px;position:relative;
-      background:rgba(255,255,255,0.15);padding:6px 10px;border-radius:20px;
-      cursor:pointer;color:#fff;border:1.5px solid ${borderColor};
-      transition:all 150ms;margin:0;
-    ">
-      <span style="font-size:13px;font-weight:600">📅 ${arabicMonth(active)}</span>
-      <span style="background:${borderColor};color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">${statusIcon[activeStatus]} ${statusText[activeStatus]}</span>
-      <span style="opacity:0.7;font-size:10px">▼</span>
-      <select onchange="pickMonth(this.value)" style="
-        position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;
-        font-family:inherit;direction:rtl;
-      ">${opts}</select>
-    </label>
+    <select id="_mcSel" onchange="pickMonth(this.value)" title="غيّر الشهر النشط" style="
+      display:inline-flex;align-items:center;
+      background:rgba(255,255,255,0.18);color:#fff;
+      padding:7px 26px 7px 12px;border-radius:20px;
+      border:1.5px solid ${borderColor};
+      font-family:inherit;font-weight:700;font-size:12.5px;
+      cursor:pointer;outline:none;
+      appearance:none;-webkit-appearance:none;-moz-appearance:none;
+      background-image:url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2210%22 height=%2210%22 viewBox=%220 0 10 10%22><path d=%22M2 4l3 3 3-3%22 stroke=%22white%22 fill=%22none%22 stroke-width=%221.5%22 stroke-linecap=%22round%22/></svg>');
+      background-repeat:no-repeat;background-position:left 10px center;
+      direction:rtl;margin:0 4px;transition:all 150ms;
+    " onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.18)'">
+      ${opts}
+    </select>
   `;
   window._monthChipOnChange = onChange;
   renderMonthSafetyBanner(active, real);

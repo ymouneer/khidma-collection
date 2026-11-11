@@ -5,14 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>نظام خدمة v2</title>
 <link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
   body {
     background: radial-gradient(ellipse at top, #f5e9c7 0%, var(--cream) 50%),
                 linear-gradient(180deg, var(--cream) 0%, #efe8d4 100%);
     min-height: 100vh;
   }
+  .month-bar {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+    color: #fff; padding: 10px 20px;
+    display: flex; justify-content: center; align-items: center; gap: 14px;
+    box-shadow: var(--shadow);
+  }
+  .month-bar .lbl { font-size: 13px; opacity: 0.85; }
   .hero {
-    max-width: 960px; margin: 0 auto; padding: 60px 20px 20px; text-align: center;
+    max-width: 960px; margin: 0 auto; padding: 50px 20px 20px; text-align: center;
   }
   .hero .brand {
     display: inline-flex; align-items: center; gap: 10px;
@@ -22,10 +31,10 @@
     margin-bottom: 16px;
   }
   .hero h1 {
-    font-size: 48px; color: var(--accent); margin: 0 0 8px;
+    font-size: 44px; color: var(--accent); margin: 0 0 8px;
     font-weight: 800; letter-spacing: -0.03em; line-height: 1.1;
   }
-  .hero .sub { color: var(--muted); font-size: 17px; max-width: 520px; margin: 0 auto; }
+  .hero .sub { color: var(--muted); font-size: 16px; max-width: 520px; margin: 0 auto; }
   .salawat {
     color: var(--gold); margin-top: 20px; font-size: 20px;
     font-weight: 500; letter-spacing: 0.02em;
@@ -58,8 +67,7 @@
     width: 48px; height: 48px; border-radius: var(--r);
     background: var(--accent-ultra-light);
     display: flex; align-items: center; justify-content: center; font-size: 22px;
-    margin-bottom: 4px;
-    transition: all var(--t);
+    margin-bottom: 4px; transition: all var(--t);
   }
   .tile:hover .icon { background: var(--accent); color: #fff; transform: scale(1.05); }
   .tile .title { font-size: 17px; font-weight: 700; color: var(--accent); }
@@ -73,6 +81,11 @@
 </head>
 <body>
 
+<div class="month-bar">
+  <span class="lbl">📅 الشهر النشط:</span>
+  <span id="monthChipHolder"></span>
+</div>
+
 <div class="hero">
   <div class="brand">🌿 نظام خدمة · إصدار v2</div>
   <h1>بسم الله<br>الرحمن الرحيم</h1>
@@ -84,28 +97,28 @@
   <a href="collection.html" class="tile">
     <div class="icon">📋</div>
     <div class="title">التحصيل</div>
-    <div class="desc">متابعة التحصيل الشهري من الكفلاء — واجهة محسّنة لنشوى</div>
+    <div class="desc">متابعة التحصيل الشهري من الكفلاء — تابس يوسف/نشوى + بحث شامل + مدفوع مقدماً</div>
   </a>
 
   <a href="admin.html" class="tile">
     <span class="lock">🔒</span>
     <div class="icon">👥</div>
     <div class="title">إدارة الكفالات</div>
-    <div class="desc">الكفالات، الأشخاص، تعديلات نوفمبر، البحث والفلترة الذكية</div>
+    <div class="desc">الكفالات، الأشخاص — التعديلات الدائمة تُطبّق فوراً، الوقتية للإقفال</div>
   </a>
 
   <a href="closure.html" class="tile">
     <span class="lock">🔒</span>
     <div class="icon">📊</div>
     <div class="title">إقفال الشهر</div>
-    <div class="desc">معالج ٦ خطوات — الصدقات والزكاة وخطة التحويل والمراجعة</div>
+    <div class="desc">معالج ٦ خطوات — توزيع تلقائي للزكاة و تعبئة تلقائية لخطة التحويل</div>
   </a>
 
   <a href="reports.html" class="tile">
     <span class="lock">🔒</span>
     <div class="icon">📄</div>
     <div class="title">التقارير والرسائل</div>
-    <div class="desc">تقارير PDF لكل منطقة، رسالة نشوى، ملخصات المشايخ</div>
+    <div class="desc">تقارير لكل منطقة، رسالة نشوى، ملخصات المشايخ</div>
   </a>
 
   <a href="backups.html" class="tile">
@@ -119,11 +132,16 @@
     <span class="lock">🔒</span>
     <div class="icon">📜</div>
     <div class="title">سجل التغييرات</div>
-    <div class="desc">كل عملية مسجّلة — فلترة بالوقت والنوع والهدف</div>
+    <div class="desc">كل تعديل محفوظ بـ before/after — زر ⟲ تراجع لأي عملية</div>
   </a>
 </div>
 
 <footer>Khidma v2 · 2026</footer>
 
+<script src="config.js"></script>
+<script>
+initFirebase();
+renderMonthChip('monthChipHolder', () => location.reload());
+</script>
 </body>
 </html>
