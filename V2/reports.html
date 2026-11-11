@@ -413,8 +413,8 @@ function filterReportByName(query) {
   });
 }
 
-// Export a DETAILED CSV for an area, respecting current exclusions.
-// One row per funding entry (not per guardian) + full context columns.
+// Export a DETAILED CSV for an area — one row per guardian/case.
+// Shows all funding sources summarised, plus a clear Amount + Extra + Total layout.
 function exportAreaDetailed(area) {
   const data = allMonthsData[selectedMonth] || {};
   const snapshot = data.snapshot?.kafalat || liveKafalat;
@@ -425,10 +425,10 @@ function exportAreaDetailed(area) {
 
   const rows = [[
     '#','المنطقة','نوع الحالة','ولي الأمر / الحالة','اسم الطفل','تاريخ الميلاد',
-    'المصدر','اسم الكفيل','المحصّل (PT)','المبلغ','مدفوع مقدماً حتى','ملاحظات'
+    'الكفلاء','المبلغ الأساسي','الإضافي (زكاة)','إجمالي الصرف هذا الشهر','ملاحظات'
   ]];
 
-  // Build a stable guardian → serial map (same ordering as the report)
+  // Group by guardian
   const byGuardian = {};
   Object.entries(snapshot).forEach(([kid, k]) => {
     if (k.area !== area || k.status !== 'active') return;
@@ -436,65 +436,60 @@ function exportAreaDetailed(area) {
     let label, key;
     if (gid && people[gid]?.name) { label = people[gid].name; key = 'g:' + gid; }
     else { label = k.child || (k.case_type||'').replace(/_/g,' '); key = 'k:' + kid; }
-    if (!byGuardian[key]) byGuardian[key] = {name: label, gid: gid || key, kafalat: [], total: 0};
-    byGuardian[key].kafalat.push({kid, k});
+    if (!byGuardian[key]) byGuardian[key] = {
+      name: label, gid: gid || key, kafalat: [],
+      base: 0, kafeels: new Set(), children: new Set(), caseTypes: new Set(),
+      childDobs: new Set(), notes: new Set()
+    };
+    byGuardian[key].kafalat.push(k);
+    if (k.child) byGuardian[key].children.add(k.child);
+    if (k.child_dob) byGuardian[key].childDobs.add(k.child_dob);
+    if (k.case_type) byGuardian[key].caseTypes.add(k.case_type.replace(/_/g,' '));
+    (k.funding||[]).forEach(f => {
+      byGuardian[key].base += f.amount || 0;
+      if (f.source === 'kafeel' && f.kafeel_id && people[f.kafeel_id]?.name) {
+        byGuardian[key].kafeels.add(people[f.kafeel_id].name);
+      } else if (f.source === 'sadaqat') {
+        byGuardian[key].kafeels.add('صدقات');
+      } else if (f.source === 'zakat') {
+        byGuardian[key].kafeels.add('زكاة');
+      }
+      if (f.notes) byGuardian[key].notes.add(f.notes);
+    });
   });
+
   const sortedKeys = Object.keys(byGuardian).sort((a,b) =>
     byGuardian[a].name.localeCompare(byGuardian[b].name, 'ar')
   );
 
-  let serial = 0;
-  let grandBase = 0, grandZakat = 0;
-
+  let serial = 0, grandBase = 0, grandZakat = 0, grandTotal = 0;
   sortedKeys.forEach(key => {
     const g = byGuardian[key];
-    if (excluded.has(g.gid)) return; // honor exclusion
+    if (excluded.has(g.gid)) return;
     serial++;
-
-    g.kafalat.forEach(({k}) => {
-      (k.funding||[]).forEach(f => {
-        const sourceAr = f.source === 'kafeel' ? 'كفيل'
-                       : f.source === 'sadaqat' ? 'صدقات'
-                       : f.source === 'zakat' ? 'زكاة' : (f.source||'');
-        const kafeelName = f.source === 'kafeel' ? ((people[f.kafeel_id]||{}).name || '') : '';
-        const ptName = f.pt_id ? ((people[f.pt_id]||{}).name || '') : '';
-        rows.push([
-          serial,
-          areaDisplay(k.area),
-          (k.case_type||'').replace(/_/g,' '),
-          g.name,
-          k.child || '',
-          k.child_dob || '',
-          sourceAr,
-          kafeelName,
-          ptName,
-          f.amount || 0,
-          f.prepaid_through || '',
-          f.notes || ''
-        ]);
-        grandBase += f.amount || 0;
-      });
-    });
-
-    // Zakat distribution row (if any)
-    const zakatAmt = dist[g.gid] || 0;
-    if (zakatAmt > 0) {
-      rows.push([
-        serial, areaDisplay(area), '', g.name, '', '',
-        'زكاة توزيع', '', '', zakatAmt, '', 'توزيع زكاة الشهر'
-      ]);
-      grandZakat += zakatAmt;
-    }
+    const extra = dist[g.gid] || 0;
+    const total = g.base + extra;
+    grandBase += g.base; grandZakat += extra; grandTotal += total;
+    rows.push([
+      serial,
+      areaDisplay(area),
+      [...g.caseTypes].join(' + '),
+      g.name,
+      [...g.children].join(' + '),
+      [...g.childDobs].join(' + '),
+      [...g.kafeels].join(' + '),
+      g.base,
+      extra || '',
+      total,
+      [...g.notes].join(' | ')
+    ]);
   });
 
-  // Totals
+  // Totals footer
   rows.push([]);
-  rows.push(['','','','','','','','','المبلغ الأساسي:', grandBase, '', '']);
-  rows.push(['','','','','','','','','الإضافي (زكاة):', grandZakat, '', '']);
-  rows.push(['','','','','','','','','الإجمالي:', grandBase + grandZakat, '', '']);
-  rows.push(['','','','','','','','','المستثنى:', excluded.size, '', '']);
+  rows.push(['','','','','','','المجموع:', grandBase, grandZakat, grandTotal, '']);
+  rows.push(['','','','','','','المستثنى:', excluded.size, '', '', '']);
 
-  // Emit UTF-8 BOM CSV so Excel renders Arabic correctly
   const csv = '﻿' + rows.map(r =>
     r.map(c => {
       const s = String(c ?? '');

@@ -1201,7 +1201,7 @@ function renderStep7() {
   document.getElementById('step7Preview').innerHTML = '';
 }
 
-// Export detailed CSV per funding entry — respects exclusions
+// Export detailed CSV — one row per guardian/case, with clear Amount + Extra + Total columns
 function exportAreaDetailed(area) {
   const effective = effectiveKafalat();
   const dist = state.zakat_distribution || {};
@@ -1209,10 +1209,9 @@ function exportAreaDetailed(area) {
 
   const rows = [[
     '#','المنطقة','نوع الحالة','ولي الأمر / الحالة','اسم الطفل','تاريخ الميلاد',
-    'المصدر','اسم الكفيل','المحصّل (PT)','المبلغ','مدفوع مقدماً حتى','ملاحظات'
+    'الكفلاء','المبلغ الأساسي','الإضافي (زكاة)','إجمالي الصرف هذا الشهر','ملاحظات'
   ]];
 
-  // Build guardian groupings consistent with the report view
   const byGuardian = {};
   Object.entries(effective).forEach(([kid, k]) => {
     if (k.area !== area || k.status !== 'active') return;
@@ -1220,55 +1219,58 @@ function exportAreaDetailed(area) {
     let label, key;
     if (gid && allPeople[gid]?.name) { label = allPeople[gid].name; key = 'g:' + gid; }
     else { label = k.child || (k.case_type||'').replace(/_/g,' '); key = 'k:' + kid; }
-    if (!byGuardian[key]) byGuardian[key] = {name: label, gid: gid || key, kafalat: []};
+    if (!byGuardian[key]) byGuardian[key] = {
+      name: label, gid: gid || key, kafalat: [],
+      base: 0, kafeels: new Set(), children: new Set(), caseTypes: new Set(),
+      childDobs: new Set(), notes: new Set()
+    };
     byGuardian[key].kafalat.push(k);
+    if (k.child) byGuardian[key].children.add(k.child);
+    if (k.child_dob) byGuardian[key].childDobs.add(k.child_dob);
+    if (k.case_type) byGuardian[key].caseTypes.add(k.case_type.replace(/_/g,' '));
+    (k.funding||[]).forEach(f => {
+      byGuardian[key].base += f.amount || 0;
+      if (f.source === 'kafeel' && f.kafeel_id && allPeople[f.kafeel_id]?.name) {
+        byGuardian[key].kafeels.add(allPeople[f.kafeel_id].name);
+      } else if (f.source === 'sadaqat') {
+        byGuardian[key].kafeels.add('صدقات');
+      } else if (f.source === 'zakat') {
+        byGuardian[key].kafeels.add('زكاة');
+      }
+      if (f.notes) byGuardian[key].notes.add(f.notes);
+    });
   });
+
   const sortedKeys = Object.keys(byGuardian).sort((a,b) =>
     byGuardian[a].name.localeCompare(byGuardian[b].name, 'ar')
   );
 
-  let serial = 0, grandBase = 0, grandZakat = 0;
+  let serial = 0, grandBase = 0, grandZakat = 0, grandTotal = 0;
   sortedKeys.forEach(key => {
     const g = byGuardian[key];
     if (excluded.has(g.gid)) return;
     serial++;
-    g.kafalat.forEach(k => {
-      (k.funding||[]).forEach(f => {
-        const sourceAr = f.source === 'kafeel' ? 'كفيل'
-                       : f.source === 'sadaqat' ? 'صدقات'
-                       : f.source === 'zakat' ? 'زكاة' : (f.source||'');
-        rows.push([
-          serial,
-          areaDisplay(k.area),
-          (k.case_type||'').replace(/_/g,' '),
-          g.name,
-          k.child || '',
-          k.child_dob || '',
-          sourceAr,
-          f.source === 'kafeel' ? ((allPeople[f.kafeel_id]||{}).name || '') : '',
-          f.pt_id ? ((allPeople[f.pt_id]||{}).name || '') : '',
-          f.amount || 0,
-          f.prepaid_through || '',
-          f.notes || ''
-        ]);
-        grandBase += f.amount || 0;
-      });
-    });
-    const zakatAmt = dist[g.gid] || 0;
-    if (zakatAmt > 0) {
-      rows.push([
-        serial, areaDisplay(area), '', g.name, '', '',
-        'زكاة توزيع', '', '', zakatAmt, '', 'توزيع زكاة الشهر'
-      ]);
-      grandZakat += zakatAmt;
-    }
+    const extra = dist[g.gid] || 0;
+    const total = g.base + extra;
+    grandBase += g.base; grandZakat += extra; grandTotal += total;
+    rows.push([
+      serial,
+      areaDisplay(area),
+      [...g.caseTypes].join(' + '),
+      g.name,
+      [...g.children].join(' + '),
+      [...g.childDobs].join(' + '),
+      [...g.kafeels].join(' + '),
+      g.base,
+      extra || '',
+      total,
+      [...g.notes].join(' | ')
+    ]);
   });
 
   rows.push([]);
-  rows.push(['','','','','','','','','المبلغ الأساسي:', grandBase, '', '']);
-  rows.push(['','','','','','','','','الإضافي (زكاة):', grandZakat, '', '']);
-  rows.push(['','','','','','','','','الإجمالي:', grandBase + grandZakat, '', '']);
-  rows.push(['','','','','','','','','المستثنى:', excluded.size, '', '']);
+  rows.push(['','','','','','','المجموع:', grandBase, grandZakat, grandTotal, '']);
+  rows.push(['','','','','','','المستثنى:', excluded.size, '', '', '']);
 
   const csv = '﻿' + rows.map(r =>
     r.map(c => {
