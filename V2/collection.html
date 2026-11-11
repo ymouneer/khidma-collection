@@ -489,11 +489,17 @@ async function toggleKafeel(ptId, kafeelId) {
   const current = getKafeelStatus(ptId, kafeelId, kafeel);
   const next = current === 'paid' ? 'unpaid' : current === 'unpaid' ? 'pending' : 'paid';
 
-  // CONFIRMATION before marking paid (critical action)
+  // CONFIRMATION before marking paid (critical action) - with prepaid option
+  let payResult = {confirmed: true};
   if (next === 'paid') {
     const kafeelName = (allPeople[kafeelId]||{}).name || '?';
-    const ok = await confirmPayment('تأكيد الدفع', `هل استلمتي من ${kafeelName}؟`, `المبلغ: ${fmt(kafeel.amount)} جنيه`);
-    if (!ok) return;
+    payResult = await confirmPayment('تأكيد الدفع', `هل استلمتي من ${kafeelName}؟`, `المبلغ: ${fmt(kafeel.amount)} جنيه`);
+    if (!payResult.confirmed) return;
+
+    // If prepaid, write prepaid_through to Firebase funding entries for this kafeel
+    if (payResult.prepaid_through) {
+      await applyPrepaidToFirebase(kafeelId, payResult.prepaid_through);
+    }
   }
 
   if (!state[ptId]) state[ptId] = {kafeel_payments: {}};
@@ -501,7 +507,10 @@ async function toggleKafeel(ptId, kafeelId) {
   if (next === 'pending') {
     delete state[ptId].kafeel_payments[kafeelId];
   } else {
-    state[ptId].kafeel_payments[kafeelId] = {status: next, paid_at: Date.now()};
+    const entry = {status: next, paid_at: Date.now()};
+    if (payResult.prepaid_through) entry.prepaid_through = payResult.prepaid_through;
+    if (payResult.note) entry.note = payResult.note;
+    state[ptId].kafeel_payments[kafeelId] = entry;
   }
 
   const allPaid = pt.kafeel_list.every(k => {
@@ -525,21 +534,53 @@ async function toggleKafeel(ptId, kafeelId) {
 }
 
 function confirmPayment(title, msg, detail) {
+  // Build month options: next 12 months from CURRENT_MONTH
+  const [y, m] = CURRENT_MONTH.split('-').map(Number);
+  const monthOpts = [];
+  for (let i = 1; i <= 13; i++) {
+    const d = new Date(y, m - 1 + i, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    monthOpts.push(`<option value="${ym}">${arabicMonth(ym)}</option>`);
+  }
+
   return new Promise(resolve => {
     const bg = document.createElement('div');
     bg.className = 'modal-bg';
-    bg.innerHTML = `<div class="modal" style="max-width:380px;text-align:center">
-      <div style="font-size:36px;margin-bottom:10px">💰</div>
-      <h3 style="margin-top:0">${title}</h3>
-      <p style="color:var(--muted);font-size:14px">${msg}</p>
-      <div style="padding:12px;background:var(--cream-deep);border-radius:8px;margin:12px 0;font-weight:700;color:var(--accent)">${detail}</div>
+    bg.innerHTML = `<div class="modal" style="max-width:420px">
+      <div style="text-align:center">
+        <div style="font-size:36px;margin-bottom:10px">💰</div>
+        <h3 style="margin-top:0">${title}</h3>
+        <p style="color:var(--muted);font-size:14px">${msg}</p>
+        <div style="padding:12px;background:var(--cream-deep);border-radius:8px;margin:12px 0;font-weight:700;color:var(--accent)">${detail}</div>
+      </div>
+      <div style="padding:12px;background:#fff;border:1px solid var(--border);border-radius:8px;margin:10px 0">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0 0 8px">
+          <input type="radio" name="_paytype" value="this_only" checked style="width:auto" onchange="document.getElementById('_pmSel').disabled=true;document.getElementById('_pmSel').style.opacity=0.4">
+          <span>دفع ${arabicMonth(CURRENT_MONTH)} فقط</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">
+          <input type="radio" name="_paytype" value="prepaid" style="width:auto" onchange="document.getElementById('_pmSel').disabled=false;document.getElementById('_pmSel').style.opacity=1">
+          <span>دفع مقدماً حتى:</span>
+          <select id="_pmSel" disabled style="opacity:0.4;flex:1">${monthOpts}</select>
+        </label>
+      </div>
+      <div style="margin:10px 0">
+        <label style="font-size:12px;color:var(--muted);margin-bottom:4px;display:block">ملاحظات (اختيارية)</label>
+        <textarea id="_payNote" placeholder="مثلاً: دفع نقدي، تحويل بنكي..." style="width:100%;min-height:50px;padding:8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px"></textarea>
+      </div>
       <div class="modal-actions" style="justify-content:center">
-        <button id="_cpy">✓ نعم، تأكيد</button>
+        <button id="_cpy">✓ نعم، تأكيد الدفع</button>
         <button class="btn-ghost" id="_cpn">إلغاء</button>
       </div></div>`;
     document.body.appendChild(bg);
-    bg.querySelector('#_cpy').onclick = () => { bg.remove(); resolve(true); };
-    bg.querySelector('#_cpn').onclick = () => { bg.remove(); resolve(false); };
+    bg.querySelector('#_cpy').onclick = () => {
+      const payType = bg.querySelector('input[name="_paytype"]:checked').value;
+      const prepaidThrough = payType === 'prepaid' ? bg.querySelector('#_pmSel').value : null;
+      const note = bg.querySelector('#_payNote').value.trim();
+      bg.remove();
+      resolve({confirmed: true, prepaid_through: prepaidThrough, note});
+    };
+    bg.querySelector('#_cpn').onclick = () => { bg.remove(); resolve({confirmed: false}); };
   });
 }
 
@@ -613,6 +654,31 @@ function submitProgress() {
   document.body.appendChild(bg);
   bg.querySelector('#_cpy2').onclick = () => { navigator.clipboard.writeText(msg); toast('✓ نُسخ', 'success'); bg.remove(); };
   bg.querySelector('#_cls2').onclick = () => bg.remove();
+}
+
+// Apply prepaid_through to Firebase kafalat funding entries for this kafeel
+async function applyPrepaidToFirebase(kafeelId, prepaidThrough) {
+  const updatedKafalat = [];
+  for (const [kid, k] of Object.entries(allKafalat)) {
+    if (k.status !== 'active') continue;
+    let changed = false;
+    const funding = (k.funding || []).map(f => {
+      if (f.source === 'kafeel' && f.kafeel_id === kafeelId) {
+        changed = true;
+        return {...f, prepaid_through: prepaidThrough};
+      }
+      return f;
+    });
+    if (changed) {
+      await ref(`kafalat/${kid}/funding`).set(funding);
+      await ref(`kafalat/${kid}/updated_at`).set(Date.now());
+      allKafalat[kid].funding = funding;
+      updatedKafalat.push(k.child);
+    }
+  }
+  if (updatedKafalat.length) {
+    toast(`✓ تم حفظ الدفع المقدم حتى ${arabicMonth(prepaidThrough)} لـ ${updatedKafalat.length} طفل`, 'success');
+  }
 }
 
 function save() {

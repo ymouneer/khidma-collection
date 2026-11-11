@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تعيين PTs ليوسف — مرة واحدة</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+  .step-card {
+    background: #fff; border: 2px solid var(--border); border-radius: var(--r-lg);
+    padding: 20px; margin-bottom: 14px; position: relative;
+  }
+  .step-card.locked { opacity: 0.5; pointer-events: none; }
+  .step-card.done { border-color: var(--success); background: #f0faf3; }
+  .step-card .step-num {
+    position: absolute; top: 20px; right: 20px;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--cream); color: var(--accent); font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step-card.done .step-num { background: var(--success); color: #fff; }
+  .step-card h3 { margin: 0 0 8px; padding-right: 48px; color: var(--accent); }
+  .step-card.done h3::after { content: ' ✓'; color: var(--success); }
+  .diff-badge {
+    display: inline-block; padding: 1px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; margin-right: 4px;
+  }
+  .diff-new { background: #d4edda; color: #155724; }
+  .diff-update { background: #fff4d9; color: #8b6a1e; }
+  .diff-unmatched { background: #f8d7da; color: #721c24; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>⚙️ تعيين PTs ليوسف</h1>
+  <div class="right">
+    <a href="home.html">الرئيسية</a>
+    <a href="admin.html">الإدارة</a>
+    <span class="logout" onclick="logout()">خروج</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="card" style="background:#fff4d9;border-right:4px solid var(--warn)">
+    <h3 style="color:#6d4e00;margin-top:0">معالج لمرة واحدة فقط</h3>
+    <p style="color:#6d4e00;font-size:14px;margin:0">
+      هذا المعالج يضبط ١٥ PT تحت يوسف (المحصّل = you).
+      الإجمالي الفعلي من البيانات الحالية: <b>٥٦,٢٠٠ جنيه</b>.
+      <br><br>
+      <b>قبل التنفيذ:</b> backup إجباري + مراجعة الخطة + تأكيد مزدوج.
+    </p>
+  </div>
+
+  <!-- STEP 1: BACKUP -->
+  <div class="step-card" id="step1">
+    <div class="step-num">١</div>
+    <h3>النسخة الاحتياطية</h3>
+    <p style="color:var(--muted);font-size:14px">
+      backup كامل لـ <code>khidma_v2</code> - يُحفظ في Firebase + يُحمَّل كملف.
+    </p>
+    <div id="step1Status"></div>
+    <button onclick="doBackup()" id="step1Btn" class="btn-gold">💾 Backup Now</button>
+  </div>
+
+  <!-- STEP 2: ANALYZE -->
+  <div class="step-card locked" id="step2">
+    <div class="step-num">٢</div>
+    <h3>تحليل الخطة</h3>
+    <p style="color:var(--muted);font-size:14px">
+      فحص الـ ١٥ PT: مَن موجود في Firebase و مَن يحتاج إنشاء، و كم funding entry يحتاج إعادة ربط.
+    </p>
+    <div id="step2Analysis"></div>
+    <button onclick="analyze()" id="step2Btn" disabled>▶ تحليل</button>
+  </div>
+
+  <!-- STEP 3: APPLY -->
+  <div class="step-card locked" id="step3">
+    <div class="step-num">٣</div>
+    <h3>تطبيق التعيينات</h3>
+    <p style="color:var(--muted);font-size:14px">
+      تنفيذ الخطة على Firebase: إنشاء/تحديث الـ PTs، ربط الـ funding، تعيين collector=youssef.
+    </p>
+    <div id="step3Status"></div>
+    <button onclick="applyChanges()" id="step3Btn" disabled>▶ تطبيق</button>
+  </div>
+
+  <!-- STEP 4: VERIFY -->
+  <div class="step-card locked" id="step4">
+    <div class="step-num">٤</div>
+    <h3>التحقق النهائي</h3>
+    <div id="step4Results"></div>
+  </div>
+
+</div>
+
+<div id="modalContainer"></div>
+
+<script src="config.js"></script>
+<script>
+if (!checkAuth()) throw new Error('auth');
+initFirebase();
+
+// Youssef's PT structure (confirmed by math: 56,200 total)
+const YOUSSEF_STRUCTURE = {
+  'أحمد محمد': ['صفاء ملوخية', 'عمر سلطان', 'فرح شريف', 'احمد محمد', 'هنا أسامة', 'يحيى إسماعيل', 'عمر رفقي', 'مروة بدران'],
+  'مرام جمعة': ['يمنى جمعة', 'عواطف علام', 'مرام جمعة'],
+  'يوسف منير': ['يوسف منير', 'داليا محمد حسن'],
+  'محمود أحمد': ['محمود أحمد'],
+  'محمد حسن عبدالباسط': ['محمد حسن عبدالباسط'],
+  'زياد عمرو علي': ['لميس محمود إبراهيم', 'زياد عمرو علي', 'سيف عمرو محمد'],
+  'مصطفى عمرو علي': ['عمرو علي جمال', 'مصطفى عمرو علي', 'أحمد علاء', 'مصطفى بكتاش', 'صلاح الدين احمد'],
+  'عمرو عابدين': ['أشرف عابدين', 'فرح عابدين', 'عمرو عابدين'],
+  'داليا حافظ': ['مرفت علي', 'يحيى حافظ'],
+  'رشا شعبان': ['رشا شعبان'],
+  'خالد الليثى': ['خالد الليثى'],
+  'محمد حجازي': ['محمد حجازي'],
+  'أحمد خليل': ['أحمد خليل'],
+  'أحمد عبد القادر': ['أحمد عبد القادر'],
+  'عمر شعت': ['عمر شعت']
+};
+
+let backupDone = false, analyzeDone = false, applyDone = false;
+let plan = null;
+
+function normalize(s) {
+  if (!s) return '';
+  return s.trim()
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/\s+/g, ' ');
+}
+
+// STEP 1: Backup
+async function doBackup() {
+  const btn = document.getElementById('step1Btn');
+  btn.disabled = true;
+  btn.textContent = 'جاري النسخ...';
+  try {
+    await createFullBackup();
+    backupDone = true;
+    document.getElementById('step1').classList.add('done');
+    document.getElementById('step2').classList.remove('locked');
+    document.getElementById('step2Btn').disabled = false;
+    btn.textContent = '✓ تم النسخ';
+    document.getElementById('step1Status').innerHTML = '<div style="color:var(--success);font-weight:600;margin:10px 0">✓ تم حفظ النسخة الاحتياطية</div>';
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '💾 Backup Now';
+    toast('فشل: ' + e.message, 'error');
+  }
+}
+
+// STEP 2: Analyze current state and build plan
+async function analyze() {
+  if (!backupDone) return toast('اعمل Backup أولاً', 'error');
+  const btn = document.getElementById('step2Btn');
+  btn.disabled = true;
+  btn.textContent = 'جاري التحليل...';
+
+  try {
+    const [peopleSnap, kafalatSnap] = await Promise.all([
+      ref('people').once('value'),
+      ref('kafalat').once('value')
+    ]);
+    const people = peopleSnap.val() || {};
+    const kafalat = kafalatSnap.val() || {};
+
+    // Build lookup: normalized name → person_id
+    const nameToId = {};
+    for (const [pid, p] of Object.entries(people)) {
+      nameToId[normalize(p.name)] = pid;
+    }
+
+    // Plan structure
+    plan = {
+      pts: [], // { name, pt_id, is_new, kafeels: [...] }
+      funding_updates: [], // { kafala_id, fid, new_pt_id, old_pt_id, amount, area, child }
+      unmatched_kafeels: [],
+      total_amount: 0,
+      pts_to_create: 0, pts_to_update: 0,
+      people_to_create: 0
+    };
+
+    // Track which funding entries are already claimed (to prevent double-counting via fuzzy match)
+    const claimedFunding = new Set();  // Set of "kafala_id|fid"
+
+    for (const [ptName, kafeels] of Object.entries(YOUSSEF_STRUCTURE)) {
+      const ptNorm = normalize(ptName);
+      let ptId = nameToId[ptNorm];
+      let isNew = false;
+
+      if (!ptId) {
+        ptId = 'p_' + uid();
+        isNew = true;
+        plan.pts_to_create++;
+      } else {
+        plan.pts_to_update++;
+      }
+
+      const ptEntry = { name: ptName, pt_id: ptId, is_new: isNew, kafeels: [], total: 0 };
+
+      for (const kafeelName of kafeels) {
+        const kNorm = normalize(kafeelName);
+        let kafeelId = nameToId[kNorm];
+        let kafeelIsNew = false;
+        let fuzzyMatched = false;
+
+        if (!kafeelId) {
+          // Try FUZZY match to a Firebase person name (handles combined names like "احمد علاء مصطفى بكتاش")
+          for (const [normName, pid] of Object.entries(nameToId)) {
+            if (normName && kNorm && (normName.includes(kNorm) || kNorm.includes(normName)) && kNorm.length > 3) {
+              // Found a fuzzy candidate - use it UNLESS all its funding already claimed
+              const p = people[pid];
+              let hasUnclaimedFunding = false;
+              for (const [kid, k] of Object.entries(kafalat)) {
+                if (k.status !== 'active') continue;
+                for (const f of (k.funding || [])) {
+                  if (f.source !== 'kafeel') continue;
+                  if (f.kafeel_id === pid && !claimedFunding.has(`${kid}|${f.fid}`)) {
+                    hasUnclaimedFunding = true;
+                    break;
+                  }
+                }
+                if (hasUnclaimedFunding) break;
+              }
+              if (hasUnclaimedFunding) {
+                kafeelId = pid;
+                fuzzyMatched = true;
+                break;
+              }
+            }
+          }
+
+          if (!kafeelId) {
+            // Still no match - create new person
+            kafeelId = 'p_' + uid();
+            kafeelIsNew = true;
+            plan.people_to_create++;
+          }
+        }
+
+        // Find all funding entries for this kafeel (by kafeel_id in Firebase)
+        const kEntries = [];
+        if (!kafeelIsNew) {
+          for (const [kid, k] of Object.entries(kafalat)) {
+            if (k.status !== 'active') continue;
+            for (const f of (k.funding || [])) {
+              if (f.source !== 'kafeel' || !f.kafeel_id) continue;
+              if (f.kafeel_id !== kafeelId) continue;
+              const fundingKey = `${kid}|${f.fid}`;
+              // SKIP if already claimed by another Youssef kafeel (prevents double count)
+              if (claimedFunding.has(fundingKey)) continue;
+
+              claimedFunding.add(fundingKey);
+              kEntries.push({
+                kafala_id: kid, fid: f.fid,
+                area: k.area, child: k.child,
+                amount: f.amount, old_pt_id: f.pt_id,
+                fuzzy: fuzzyMatched
+              });
+              plan.total_amount += (f.amount || 0);
+              ptEntry.total += (f.amount || 0);
+              plan.funding_updates.push({
+                kafala_id: kid, fid: f.fid,
+                new_pt_id: ptId, old_pt_id: f.pt_id,
+                amount: f.amount, area: k.area, child: k.child,
+                kafeel_name: kafeelName
+              });
+            }
+          }
+        }
+
+        if (kEntries.length === 0 && !kafeelIsNew) {
+          plan.unmatched_kafeels.push(kafeelName);
+        }
+
+        ptEntry.kafeels.push({
+          name: kafeelName, kafeel_id: kafeelId,
+          is_new: kafeelIsNew,
+          fuzzy: fuzzyMatched,
+          entries: kEntries
+        });
+      }
+
+      plan.pts.push(ptEntry);
+    }
+
+    renderPlan();
+    analyzeDone = true;
+    document.getElementById('step2').classList.add('done');
+    document.getElementById('step3').classList.remove('locked');
+    document.getElementById('step3Btn').disabled = false;
+    btn.textContent = '✓ تم التحليل';
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '▶ تحليل';
+    toast('فشل: ' + e.message, 'error');
+  }
+}
+
+function renderPlan() {
+  // Expected = 55,700 (actual total based on current Firebase data, including fuzzy match for "احمد علاء مصطفى بكتاش")
+  const expected = 56200;
+  const match = Math.abs(plan.total_amount - expected) < 1;
+
+  const rows = plan.pts.map(pt => {
+    const kafeelsHtml = pt.kafeels.map(k => {
+      let badge = '';
+      if (k.is_new) badge = '<span class="diff-badge diff-new">جديد</span>';
+      else if (k.fuzzy) badge = '<span class="diff-badge" style="background:#e0d4ed;color:#4a2c7a">تطابق تقريبي</span>';
+      const entries = k.entries.length;
+      return `<div style="padding:4px 8px;font-size:12px;color:var(--muted)">
+        ${badge} ${k.name} <span style="color:var(--muted-light)">(${entries} كفالة)</span>
+      </div>`;
+    }).join('');
+
+    const ptBadge = pt.is_new
+      ? '<span class="diff-badge diff-new">PT جديد</span>'
+      : '<span class="diff-badge diff-update">تحديث</span>';
+
+    return `<tr>
+      <td style="vertical-align:top">${ptBadge}<br><b>${pt.name}</b></td>
+      <td style="vertical-align:top">${kafeelsHtml}</td>
+      <td style="vertical-align:top" class="font-mono"><b>${fmt(pt.total)}</b></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('step2Analysis').innerHTML = `
+    <div class="stats" style="margin-top:14px">
+      <div class="stat stat-accent">
+        <div class="label">PTs للإنشاء</div>
+        <div class="value">${plan.pts_to_create}</div>
+      </div>
+      <div class="stat">
+        <div class="label">PTs للتحديث</div>
+        <div class="value">${plan.pts_to_update}</div>
+      </div>
+      <div class="stat">
+        <div class="label">أشخاص جدد</div>
+        <div class="value">${plan.people_to_create}</div>
+      </div>
+      <div class="stat">
+        <div class="label">funding للربط</div>
+        <div class="value">${plan.funding_updates.length}</div>
+      </div>
+      <div class="stat stat-gold">
+        <div class="label">الإجمالي</div>
+        <div class="value">${fmt(plan.total_amount)}</div>
+        <div class="sub">${match ? '✓ مطابق' : `⚠️ متوقع ${fmt(expected)}`}</div>
+      </div>
+    </div>
+
+    ${!match ? `<div style="padding:12px;background:#f8d7da;color:#721c24;border-radius:6px;margin:10px 0">
+      ⚠️ الإجمالي ${fmt(plan.total_amount)} ≠ المتوقع ${fmt(expected)} - راجع قبل التطبيق
+    </div>` : ''}
+
+    ${plan.unmatched_kafeels.length ? `<div style="padding:12px;background:#fff4d9;color:#6d4e00;border-radius:6px;margin:10px 0">
+      ⚠️ كفلاء بدون كفالات نشطة (محتمل منقطعة): ${plan.unmatched_kafeels.join('، ')}
+    </div>` : ''}
+
+    <div style="max-height:400px;overflow:auto;border:1px solid var(--border);border-radius:6px;margin-top:14px">
+      <table>
+        <thead><tr><th>PT</th><th>الكفلاء</th><th>الإجمالي</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+// STEP 3: Apply
+async function applyChanges() {
+  if (!analyzeDone) return toast('اعمل التحليل أولاً', 'error');
+
+  const ok = await confirmImpact({
+    title: 'تطبيق تعيين يوسف',
+    message: 'سيتم تنفيذ الخطة على Firebase.',
+    impact: [
+      `إنشاء <b>${plan.pts_to_create}</b> PT جديد (collector=youssef)`,
+      `تحديث <b>${plan.pts_to_update}</b> PT موجود (role += pt, collector=youssef)`,
+      `إنشاء <b>${plan.people_to_create}</b> شخص جديد (كفلاء مفقودين)`,
+      `إعادة ربط <b>${plan.funding_updates.length}</b> funding entry للـ PTs الصح`,
+      `إجمالي: <b>${fmt(plan.total_amount)} جنيه</b>`,
+      '<b style="color:var(--danger)">غير قابل للتراجع إلا عبر استرداد backup</b>'
+    ],
+    danger: true
+  });
+  if (!ok) return;
+
+  const pw = prompt('اكتب "تطبيق" للتأكيد:');
+  if (pw !== 'تطبيق') { toast('ألغي', 'info'); return; }
+
+  const btn = document.getElementById('step3Btn');
+  btn.disabled = true;
+  btn.textContent = 'جاري التطبيق...';
+  const status = document.getElementById('step3Status');
+
+  let ptsCreated = 0, ptsUpdated = 0, peopleCreated = 0, fundingUpdated = 0, failed = 0;
+
+  try {
+    // 1. Create/update PT persons
+    for (const pt of plan.pts) {
+      try {
+        if (pt.is_new) {
+          await ref(`people/${pt.pt_id}`).set({
+            name: pt.name,
+            aliases: [],
+            roles: ['pt'],
+            collector: 'youssef',
+            active: true,
+            area: null, phone: null, notes: '',
+            created_at: Date.now(),
+            updated_at: Date.now()
+          });
+          ptsCreated++;
+        } else {
+          // Add 'pt' to roles and set collector
+          const snap = await ref(`people/${pt.pt_id}`).once('value');
+          const p = snap.val() || {};
+          const roles = p.roles || [];
+          if (!roles.includes('pt')) roles.push('pt');
+          await ref(`people/${pt.pt_id}`).update({
+            roles,
+            collector: 'youssef',
+            updated_at: Date.now()
+          });
+          ptsUpdated++;
+        }
+        await auditLog('assign_pt_youssef', `people/${pt.pt_id}`, null, {name: pt.name, collector: 'youssef'});
+      } catch(e) { failed++; console.error('PT', pt.name, e); }
+
+      // 2. Create missing kafeel persons under this PT
+      for (const k of pt.kafeels) {
+        if (k.is_new) {
+          try {
+            await ref(`people/${k.kafeel_id}`).set({
+              name: k.name,
+              aliases: [],
+              roles: ['kafeel'],
+              active: true,
+              area: null, phone: null, notes: '',
+              created_at: Date.now(),
+              updated_at: Date.now()
+            });
+            peopleCreated++;
+          } catch(e) { failed++; console.error('kafeel', k.name, e); }
+        }
+      }
+
+      status.innerHTML = `<div style="margin:8px 0;color:var(--muted)">⏳ ${pt.name}: ${ptsCreated+ptsUpdated}/${plan.pts.length} PT</div>`;
+    }
+
+    // 3. Re-link funding entries
+    // Group by kafala_id so we update each kafala's funding array once
+    const byKafala = {};
+    for (const upd of plan.funding_updates) {
+      byKafala[upd.kafala_id] = byKafala[upd.kafala_id] || [];
+      byKafala[upd.kafala_id].push(upd);
+    }
+
+    let processed = 0;
+    for (const [kid, updates] of Object.entries(byKafala)) {
+      try {
+        const snap = await ref(`kafalat/${kid}/funding`).once('value');
+        const funding = snap.val() || [];
+        let changed = false;
+        for (const upd of updates) {
+          const idx = funding.findIndex(f => f && f.fid === upd.fid);
+          if (idx >= 0) {
+            funding[idx].pt_id = upd.new_pt_id;
+            changed = true;
+            fundingUpdated++;
+          }
+        }
+        if (changed) {
+          await ref(`kafalat/${kid}/funding`).set(funding);
+          await ref(`kafalat/${kid}/updated_at`).set(Date.now());
+        }
+        processed++;
+        if (processed % 10 === 0) {
+          status.innerHTML = `<div style="margin:8px 0;color:var(--muted)">⏳ ${fundingUpdated} funding entry أُعيد ربطها</div>`;
+        }
+      } catch(e) { failed++; console.error('funding', kid, e); }
+    }
+
+    await auditLog('youssef_assignment_complete', '/khidma_v2', null, {
+      pts_created: ptsCreated, pts_updated: ptsUpdated,
+      people_created: peopleCreated, funding_updated: fundingUpdated,
+      failed, total_amount: plan.total_amount
+    });
+
+    applyDone = true;
+    document.getElementById('step3').classList.add('done');
+    document.getElementById('step4').classList.remove('locked');
+    btn.textContent = '✓ تم التطبيق';
+    status.innerHTML = `<div style="margin:10px 0;color:var(--success);font-weight:600">
+      ✓ تم: ${ptsCreated} PT جديد، ${ptsUpdated} تحديث، ${peopleCreated} كفيل جديد، ${fundingUpdated} funding entry أُعيد ربطها
+      ${failed ? `<br>⚠️ ${failed} عملية فشلت - راجع console` : ''}
+    </div>`;
+
+    await verify();
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '▶ تطبيق';
+    toast('فشل: ' + e.message, 'error');
+  }
+}
+
+// STEP 4: Verify
+async function verify() {
+  const [peopleSnap, kafalatSnap] = await Promise.all([
+    ref('people').once('value'),
+    ref('kafalat').once('value')
+  ]);
+  const people = peopleSnap.val() || {};
+  const kafalat = kafalatSnap.val() || {};
+
+  // Count Youssef PTs
+  let youssefPtCount = 0, nashwaPtCount = 0;
+  for (const p of Object.values(people)) {
+    if ((p.roles||[]).includes('pt')) {
+      if (p.collector === 'youssef') youssefPtCount++;
+      else nashwaPtCount++;
+    }
+  }
+
+  // Count Youssef total (sum of funding where pt_id is a Youssef PT)
+  const youssefPtIds = new Set(
+    Object.entries(people).filter(([_, p]) => p.collector === 'youssef' && (p.roles||[]).includes('pt'))
+      .map(([id]) => id)
+  );
+
+  let youssefTotal = 0, youssefFundingCount = 0;
+  for (const k of Object.values(kafalat)) {
+    if (k.status !== 'active') continue;
+    for (const f of (k.funding || [])) {
+      if (f.pt_id && youssefPtIds.has(f.pt_id)) {
+        youssefTotal += (f.amount || 0);
+        youssefFundingCount++;
+      }
+    }
+  }
+
+  const expected = 56200;
+  const match = Math.abs(youssefTotal - expected) < 1;
+
+  document.getElementById('step4').classList.add('done');
+  document.getElementById('step4Results').innerHTML = `
+    <div class="stats">
+      <div class="stat stat-accent">
+        <div class="label">PTs يوسف</div>
+        <div class="value">${youssefPtCount}</div>
+        <div class="sub">متوقع: 15</div>
+      </div>
+      <div class="stat">
+        <div class="label">PTs نشوى</div>
+        <div class="value">${nashwaPtCount}</div>
+      </div>
+      <div class="stat stat-gold">
+        <div class="label">إجمالي يوسف</div>
+        <div class="value">${fmt(youssefTotal)}</div>
+        <div class="sub">${match ? '✓ مطابق' : `⚠️ متوقع ${fmt(expected)}`}</div>
+      </div>
+      <div class="stat">
+        <div class="label">funding entries</div>
+        <div class="value">${youssefFundingCount}</div>
+      </div>
+    </div>
+    <div style="margin-top:14px;padding:14px;border-radius:6px;background:${match ? '#d4edda' : '#fdecea'};color:${match ? '#155724' : '#721c24'};font-weight:600">
+      ${match && youssefPtCount === 15
+        ? '✓ التحقق ناجح — يوسف يملك 15 PT بإجمالي 56,200 جنيه'
+        : '⚠️ الأرقام غير مطابقة — راجع قبل الاستخدام'}
+    </div>
+    <div style="margin-top:14px">
+      <a href="collection.html" class="btn-gold" style="display:inline-block;padding:10px 24px;border-radius:6px;text-decoration:none">
+        ← افتح التحصيل و شوف التبويبين
+      </a>
+    </div>
+  `;
+}
+</script>
+</body>
+</html>
