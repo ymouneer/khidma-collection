@@ -1201,66 +1201,73 @@ function renderAreaReport(area, skipScroll) {
   const dist = state.zakat_distribution || {};
   const excluded = getExcluded(area);
 
-  // Group by guardian
+  // Report shows DISBURSEMENT: monthly amount given to each active case,
+  // regardless of whether the sponsor paid in advance or will pay later.
+  // Falls back to child-name or case label when no guardian is set.
   const byGuardian = {};
-  Object.entries(effective).forEach(([id, k]) => {
-    if (k.area !== area || k.status !== 'active') return;
+  let auditTotalActive = 0, auditInactive = 0, auditNoGuardian = 0, auditPrepaidBySponsor = 0;
+
+  Object.entries(effective).forEach(([kid, k]) => {
+    if (k.area !== area) return;
+    if (k.status !== 'active') { auditInactive++; return; }
+    auditTotalActive++;
+
     const gid = k.guardian_id;
-    if (!gid) return;
-    const gname = (allPeople[gid]||{}).name || '—';
-    if (!byGuardian[gname]) byGuardian[gname] = {kafalat: [], total: 0, gid};
+    let label, key;
+    if (gid && allPeople[gid]?.name) {
+      label = allPeople[gid].name;
+      key = 'g:' + gid;
+    } else {
+      auditNoGuardian++;
+      label = k.child || (k.case_type ? k.case_type.replace(/_/g, ' ') : `حالة ${kid.slice(-6)}`);
+      key = 'k:' + kid;
+    }
+    if (!byGuardian[key]) byGuardian[key] = {name: label, kafalat: [], total: 0, gid: gid || key};
+
+    let anyPrepaid = false;
     (k.funding||[]).forEach(f => {
-      if (!fundingNeedsPaymentThisMonth(f, CURRENT_MONTH)) return;
-      const kafeelName = f.source === 'sadaqat' ? 'صدقات'
-                       : f.source === 'zakat'   ? 'زكاة'
-                       : (allPeople[f.kafeel_id]||{}).name || '—';
-      byGuardian[gname].kafalat.push({child: k.child, kafeel: kafeelName, amount: f.amount||0});
-      byGuardian[gname].total += f.amount || 0;
+      byGuardian[key].kafalat.push({child: k.child, amount: f.amount||0});
+      byGuardian[key].total += f.amount || 0;
+      if (f.prepaid_through && f.prepaid_through >= CURRENT_MONTH) anyPrepaid = true;
     });
+    if (anyPrepaid) auditPrepaidBySponsor++;
   });
+
   // Zakat distribution
   Object.entries(dist).forEach(([gid, amt]) => {
     const name = (allPeople[gid]||{}).name;
-    const kafala = Object.values(effective).find(k => k.guardian_id === gid);
-    if (!name || !kafala || kafala.area !== area) return;
-    if (!byGuardian[name]) byGuardian[name] = {kafalat: [], total: 0, gid};
-    byGuardian[name].zakat = amt;
-    byGuardian[name].total += amt;
+    const kafala = Object.values(effective).find(k => k.guardian_id === gid && k.area === area);
+    if (!name || !kafala) return;
+    const key = 'g:' + gid;
+    if (!byGuardian[key]) byGuardian[key] = {name, kafalat: [], total: 0, gid};
+    byGuardian[key].zakat = (byGuardian[key].zakat||0) + amt;
+    byGuardian[key].total += amt;
   });
 
-  const sorted = Object.entries(byGuardian).sort((a,b) => a[0].localeCompare(b[0]));
+  const sorted = Object.values(byGuardian)
+    .map(d => [d.name, d])
+    .sort((a,b) => a[0].localeCompare(b[0], 'ar'));
 
-  let rows = '', grand = 0, exclCount = 0, exclAmt = 0;
-  let serial = 0; // visible sequence number (skips excluded)
+  // One row per guardian (collapse kids/kafeels into totals)
+  let rows = '', grandBase = 0, grandZakat = 0, grandTotal = 0;
+  let exclCount = 0, exclAmt = 0;
+  let serial = 0;
   sorted.forEach(([gname, data]) => {
     const isExcl = excluded.has(data.gid);
     if (isExcl) { exclCount++; exclAmt += data.total; }
     else serial++;
-    const kids = data.kafalat;
-    const rowCount = kids.length + (data.zakat ? 1 : 0);
-    const checkTd = `<td rowspan="${rowCount+1}" class="no-print" style="text-align:center;vertical-align:middle">
-      <span class="excl-check ${isExcl?'checked':''}" onclick="event.stopPropagation();toggleReportExclude('${area}','${data.gid}')">${isExcl?'✗':''}</span>
-    </td>`;
-    const numTd = `<td rowspan="${rowCount+1}" style="text-align:center;vertical-align:middle;font-weight:700;color:var(--muted);width:36px">${isExcl?'—':serial}</td>`;
-    kids.forEach((k, i) => {
-      rows += `<tr class="guardian-group-row ${isExcl?'excluded':''}" data-gname="${gname}">
-        ${i===0 ? checkTd + numTd : ''}
-        ${i===0?`<td rowspan="${rowCount}" style="font-weight:600;vertical-align:middle">${gname}</td>`:''}
-        <td>${k.child||'—'}</td>
-        <td>${k.kafeel}</td>
-        <td class="font-mono">${fmt(k.amount)}</td>
-      </tr>`;
-      if (!isExcl) grand += k.amount;
-    });
-    if (data.zakat) {
-      rows += `<tr class="guardian-group-row ${isExcl?'excluded':''}" data-gname="${gname}">
-        <td>—</td><td><i>زكاة الشهر</i></td><td class="font-mono">${fmt(data.zakat)}</td>
-      </tr>`;
-      if (!isExcl) grand += data.zakat;
-    }
-    rows += `<tr class="guardian-group-row ${isExcl?'excluded':''}" data-gname="${gname}" style="background:var(--cream-deep);font-weight:700">
-      <td colspan="3" style="text-align:left">إجمالي ${gname}</td>
-      <td class="font-mono">${fmt(data.total)}</td>
+    const base = data.total - (data.zakat || 0);
+    const zakat = data.zakat || 0;
+    if (!isExcl) { grandBase += base; grandZakat += zakat; grandTotal += data.total; }
+    rows += `<tr class="guardian-group-row ${isExcl?'excluded':''}" data-gname="${gname}">
+      <td class="no-print" style="text-align:center">
+        <span class="excl-check ${isExcl?'checked':''}" onclick="event.stopPropagation();toggleReportExclude('${area}','${data.gid}')">${isExcl?'✗':''}</span>
+      </td>
+      <td style="text-align:center;font-weight:700;color:var(--muted);width:36px">${isExcl?'—':serial}</td>
+      <td style="font-weight:600">${gname}</td>
+      <td class="font-mono" style="text-align:center">${fmt(base)}</td>
+      <td class="font-mono" style="text-align:center">${zakat ? fmt(zakat) : '—'}</td>
+      <td class="font-mono" style="text-align:center;font-weight:700">${fmt(data.total)}</td>
     </tr>`;
   });
 
@@ -1270,6 +1277,16 @@ function renderAreaReport(area, skipScroll) {
   document.getElementById('step7Preview').innerHTML = `
     <div class="report-preview">
       <h2 style="color:var(--accent);margin:0 0 8px">📋 تقرير ${areaDisplay(area)} — ${arabicMonth(CURRENT_MONTH)}</h2>
+
+      <div class="no-print" style="margin-bottom:14px;padding:12px 16px;background:var(--cream);border-right:3px solid var(--accent);border-radius:var(--r-sm);font-size:12.5px;line-height:1.9">
+        <b style="color:var(--accent)">🔍 تدقيق الأرقام (التقرير = مبلغ الصرف لكل حالة، بغض النظر عن تسديد الكفيل):</b><br>
+        • كفالات نشطة في ${areaDisplay(area)}: <b>${auditTotalActive}</b>
+        ${auditInactive ? ` · موقوفة/منتهية (غير مُضمَّنة): <b>${auditInactive}</b>` : ''}<br>
+        ${auditNoGuardian ? `• حالات بدون ولي أمر (ظاهرة باسم الطفل أو نوع الحالة): <b>${auditNoGuardian}</b><br>` : ''}
+        ${auditPrepaidBySponsor ? `• كفالات سدَّد سبونسرها مقدماً (لسه بتصرف كالعادة): <b>${auditPrepaidBySponsor}</b><br>` : ''}
+        • الظاهرة في التقرير: <b>${sorted.length}</b> حالة · إجمالي <b>${fmt(grandTotal + exclAmt)}</b>
+      </div>
+
       <div class="text-sm text-muted" style="margin-bottom:12px">
         عدد الأولياء الظاهر: <b>${sorted.length - exclCount}</b> من <b>${sorted.length}</b>
       </div>
@@ -1288,18 +1305,23 @@ function renderAreaReport(area, skipScroll) {
 
       <table>
         <thead>
-          <tr class="print-title"><th colspan="5">📋 تقرير ${areaDisplay(area)} — ${arabicMonth(CURRENT_MONTH)}</th></tr>
+          <tr class="print-title"><th colspan="6">📋 تقرير ${areaDisplay(area)} — ${arabicMonth(CURRENT_MONTH)}</th></tr>
           <tr>
             <th class="no-print" style="width:44px">استثناء</th>
             <th style="width:36px">#</th>
-            <th>ولي الأمر</th><th>الطفل</th><th>الكفيل</th><th>المبلغ</th>
+            <th>ولي الأمر</th>
+            <th style="width:90px">الأساسي</th>
+            <th style="width:90px">الزكاة</th>
+            <th style="width:100px">الإجمالي</th>
           </tr>
         </thead>
         <tbody>${rows}
           <tr style="background:var(--accent);color:#fff;font-weight:700">
             <td class="no-print"></td>
-            <td colspan="4">الإجمالي ${exclCount>0 ? '(بعد الاستثناء)' : ''}</td>
-            <td class="font-mono">${fmt(grand)}</td>
+            <td colspan="2">الإجمالي ${exclCount>0 ? '(بعد الاستثناء)' : ''}</td>
+            <td class="font-mono" style="text-align:center">${fmt(grandBase)}</td>
+            <td class="font-mono" style="text-align:center">${grandZakat?fmt(grandZakat):'—'}</td>
+            <td class="font-mono" style="text-align:center">${fmt(grandTotal)}</td>
           </tr>
         </tbody>
       </table>
