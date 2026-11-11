@@ -63,12 +63,11 @@
     text-align: center !important;
     font-family: inherit !important;
   }
-  /* Hide native calendar icon in Chrome/Edge so only ours shows */
+  /* Hide native calendar icon so only ours shows — keep natural size, no overlay */
   input.dt::-webkit-calendar-picker-indicator,
   input[type="date"]::-webkit-calendar-picker-indicator,
   input[type="month"]::-webkit-calendar-picker-indicator {
-    opacity: 0; cursor: pointer; width: 100%; height: 100%;
-    position: absolute; right: 0; top: 0;
+    opacity: 0; cursor: pointer;
   }
   input.dt:focus, input[type="date"]:focus, input[type="month"]:focus {
     border-color: var(--accent) !important;
@@ -719,7 +718,7 @@ function openAssignKafeel(kid) {
       </div>
     </div>
     <div class="form-row single" style="margin-top:10px">
-      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="ak_prepaid" type="month" class="dt" onclick="this.showPicker&&this.showPicker()"></div>
+      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="ak_prepaid" type="month" class="dt" onfocus="try{this.showPicker&&this.showPicker()}catch(e){}"></div>
     </div>
   `, async () => {
     try {
@@ -989,7 +988,7 @@ function openEditKafala(kid) {
           <option value="f" ${k.child_gender==='f'?'selected':''}>أنثى</option>
         </select>
       </div>
-      <div><label>تاريخ الميلاد (اختياري)</label><input id="f_dob" type="date" class="dt" onclick="this.showPicker&&this.showPicker()" value="${k.child_dob||''}"></div>
+      <div><label>تاريخ الميلاد (اختياري)</label><input id="f_dob" type="date" class="dt" onfocus="try{this.showPicker&&this.showPicker()}catch(e){}" value="${k.child_dob||''}"></div>
       <div><label>المرحلة التعليمية (اختياري)</label>
         <select id="f_school">
           ${schoolLevels.map(s => `<option value="${s}" ${k.school_level===s?'selected':''}>${s||'—'}</option>`).join('')}
@@ -1184,13 +1183,13 @@ function openNewKafala() {
           <option value="خبز">خبز</option>
         </select>
       </div>
-      <div><label>تاريخ البدء</label><input id="nk_start" type="month" class="dt" onclick="this.showPicker&&this.showPicker()" value="${getWorkingMonth()}"></div>
+      <div><label>تاريخ البدء</label><input id="nk_start" type="month" class="dt" onfocus="try{this.showPicker&&this.showPicker()}catch(e){}" value="${getWorkingMonth()}"></div>
     </div>
     <details style="margin:8px 0 14px">
       <summary style="cursor:pointer;color:var(--muted);font-size:12.5px">+ بيانات إضافية (اختيارية)</summary>
       <div class="form-row three mt-sm">
         <div><label>الجنس</label><select id="nk_gender"><option value="">—</option><option value="m">ذكر</option><option value="f">أنثى</option></select></div>
-        <div><label>تاريخ الميلاد</label><input id="nk_dob" type="date" class="dt" onclick="this.showPicker&&this.showPicker()"></div>
+        <div><label>تاريخ الميلاد</label><input id="nk_dob" type="date" class="dt" onfocus="try{this.showPicker&&this.showPicker()}catch(e){}"></div>
         <div><label>المرحلة التعليمية</label><select id="nk_school">${schoolLevels.map(s=>`<option value="${s}">${s||'—'}</option>`).join('')}</select></div>
       </div>
       <div class="form-row single">
@@ -1257,7 +1256,7 @@ function openNewKafala() {
         </div>
       </div>
       <div class="form-row single mt-sm">
-        <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="nk_prepaid" type="month" class="dt" onclick="this.showPicker&&this.showPicker()"></div>
+        <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="nk_prepaid" type="month" class="dt" onfocus="try{this.showPicker&&this.showPicker()}catch(e){}"></div>
       </div>
     </div>
 
@@ -1571,7 +1570,7 @@ function openAddFunding(kid) {
     </div>
     <div class="form-row">
       <div id="af_pt_wrap"><label>محصّل (PT)</label>${renderPersonSelect('af_pt', '', 'pt')}</div>
-      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="af_prepaid" type="month" class="dt" onclick="this.showPicker&&this.showPicker()"></div>
+      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="af_prepaid" type="month" class="dt" onfocus="try{this.showPicker&&this.showPicker()}catch(e){}"></div>
     </div>
     <div class="form-row single"><div><label>ملاحظات</label><input id="af_notes"></div></div>
   `, () => saveAddFunding(kid));
@@ -1677,9 +1676,9 @@ function refreshEfForm(kid, fid) {
       <div><label>الكفيل الجديد</label>${renderPersonSelect('ef_newkafeel', f.kafeel_id, 'kafeel')}</div>
       <div><label>المحصّل (PT) الجديد</label>${renderPersonSelect('ef_newpt', f.pt_id, 'pt')}</div>
     </div>
-    <div class="form-row single"><div><label>تاريخ بدء التبديل</label><input id="ef_startym" type="month" class="dt" onclick="this.showPicker&&this.showPicker()" value="${currentMonth()}"></div></div>`;
+    <div class="form-row single"><div><label>تاريخ بدء التبديل</label><input id="ef_startym" type="month" class="dt" onfocus="try{this.showPicker&&this.showPicker()}catch(e){}" value="${currentMonth()}"></div></div>`;
   } else if (type === 'prepay') {
-    el.innerHTML = `<div class="form-row single"><div><label>مدفوع حتى</label><input id="ef_val" type="month" class="dt" onclick="this.showPicker&&this.showPicker()" value="${f.prepaid_through||''}"></div></div>`;
+    el.innerHTML = `<div class="form-row single"><div><label>مدفوع حتى</label><input id="ef_val" type="month" class="dt" onfocus="try{this.showPicker&&this.showPicker()}catch(e){}" value="${f.prepaid_through||''}"></div></div>`;
   } else if (type === 'cancel_to_pending') {
     el.innerHTML = `<div style="padding:14px;background:#fdf7e3;border:1px solid var(--warn);border-radius:8px;color:#6d4e00;font-size:13px">
       🕒 الكفالة ستتحول من <b>${personName(allPeople, f.kafeel_id)}</b> إلى <b>صدقات (في انتظار كفيل)</b>.<br>
