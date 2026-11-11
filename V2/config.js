@@ -90,7 +90,7 @@ async function getMonthStatus(ym) {
 }
 
 /**
- * Renders the Smart Month Chip in the topbar.
+ * Renders the Smart Month Chip in the topbar using a native <select> for bulletproof UX.
  * container: DOM element ID (string) — a <span> or <div> in topbar .right
  * onChange(ym): callback when month changes
  */
@@ -99,36 +99,42 @@ async function renderMonthChip(containerId, onChange) {
   if (!el) return;
   const active = getWorkingMonth();
   const real = currentMonth();
-  const status = await getMonthStatus(active);
 
-  const statusColor = {
-    closed: '#5a6b62',
-    past: '#8b6a1e',
-    current: '#2d6a4f',
-    future: '#3b7a9e'
-  }[status];
-  const statusLabel = {
-    closed: '🔒 مقفل',
-    past: '📄 مسودة',
-    current: '✅ الحالي',
-    future: '📅 مستقبل'
-  }[status];
+  // Build 6 months: 3 past, current, 2 future
+  const months = [];
+  for (let i = -3; i <= 2; i++) months.push(addMonths(real, i));
+
+  // Get status for each (parallel)
+  const statusList = await Promise.all(months.map(m => getMonthStatus(m)));
+  const statusIcon = { closed: '🔒', past: '📄', current: '✅', future: '📅' };
+  const statusText = { closed: 'مقفل', past: 'مسودة', current: 'الحالي', future: 'مستقبل' };
+
+  const activeStatus = statusList[months.indexOf(active)] || (active === real ? 'current' : (active < real ? 'past' : 'future'));
+  const borderColor = activeStatus === 'current' ? '#2d6a4f' : (activeStatus === 'closed' ? '#5a6b62' : (activeStatus === 'future' ? '#3b7a9e' : '#8b6a1e'));
+
+  const opts = months.map((m, i) => {
+    const s = statusList[i];
+    const sel = m === active ? 'selected' : '';
+    return `<option value="${m}" ${sel}>${statusIcon[s]} ${arabicMonth(m)} — ${statusText[s]}</option>`;
+  }).join('');
 
   el.innerHTML = `
-    <div class="month-chip" onclick="openMonthPicker(event)" style="
-      display:inline-flex;align-items:center;gap:6px;
-      background:rgba(255,255,255,0.15);padding:6px 12px;border-radius:20px;
-      cursor:pointer;font-size:12.5px;font-weight:600;color:#fff;
-      border:1px solid rgba(255,255,255,0.2);transition:all 150ms;
-    " onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'">
-      <span>📅 ${arabicMonth(active)}</span>
-      <span style="background:${statusColor};padding:1px 8px;border-radius:10px;font-size:10px">${statusLabel}</span>
+    <label class="month-chip-wrap" style="
+      display:inline-flex;align-items:center;gap:6px;position:relative;
+      background:rgba(255,255,255,0.15);padding:6px 10px;border-radius:20px;
+      cursor:pointer;color:#fff;border:1.5px solid ${borderColor};
+      transition:all 150ms;margin:0;
+    ">
+      <span style="font-size:13px;font-weight:600">📅 ${arabicMonth(active)}</span>
+      <span style="background:${borderColor};color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">${statusIcon[activeStatus]} ${statusText[activeStatus]}</span>
       <span style="opacity:0.7;font-size:10px">▼</span>
-    </div>
+      <select onchange="pickMonth(this.value)" style="
+        position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;
+        font-family:inherit;direction:rtl;
+      ">${opts}</select>
+    </label>
   `;
   window._monthChipOnChange = onChange;
-
-  // Render safety banner if not current month
   renderMonthSafetyBanner(active, real);
 }
 
@@ -156,53 +162,8 @@ function switchToCurrentMonth() {
   location.reload();
 }
 
-async function openMonthPicker(ev) {
-  ev.stopPropagation();
-  // Close existing
-  document.querySelectorAll('.month-picker-dropdown').forEach(e => e.remove());
-
-  const real = currentMonth();
-  const active = getWorkingMonth();
-  // Show 6 months: 3 past, current, 2 future
-  const months = [];
-  for (let i = -3; i <= 2; i++) months.push(addMonths(real, i));
-
-  const statuses = {};
-  for (const m of months) statuses[m] = await getMonthStatus(m);
-
-  const statusIcon = { closed: '🔒', past: '📄', current: '✅', future: '📅' };
-  const statusText = { closed: 'مقفل', past: 'مسودة', current: 'الحالي', future: 'مستقبل' };
-
-  const dd = document.createElement('div');
-  dd.className = 'month-picker-dropdown';
-  dd.style.cssText = 'position:fixed;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.15);border-radius:10px;padding:6px;z-index:1000;min-width:240px;border:1px solid #e5ddd0;direction:rtl';
-
-  const rect = ev.currentTarget.getBoundingClientRect();
-  dd.style.top = (rect.bottom + 4) + 'px';
-  dd.style.right = (window.innerWidth - rect.right) + 'px';
-
-  dd.innerHTML = months.map(m => {
-    const s = statuses[m];
-    const isActive = m === active;
-    return `<div onclick="pickMonth('${m}')" style="
-      padding:9px 12px;cursor:pointer;border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;
-      ${isActive ? 'background:#e8f0eb;color:#1b4332;font-weight:700' : 'color:#1a2c23'}
-    " onmouseover="if(!${isActive})this.style.background='#faf7f0'" onmouseout="if(!${isActive})this.style.background='transparent'">
-      <span>${statusIcon[s]} ${arabicMonth(m)}</span>
-      <span style="font-size:10px;opacity:0.65">${statusText[s]}</span>
-    </div>`;
-  }).join('');
-
-  document.body.appendChild(dd);
-  setTimeout(() => {
-    const close = (e) => { if (!dd.contains(e.target)) { dd.remove(); document.removeEventListener('click', close); } };
-    document.addEventListener('click', close);
-  }, 10);
-}
-
 function pickMonth(ym) {
   setWorkingMonth(ym);
-  document.querySelectorAll('.month-picker-dropdown').forEach(e => e.remove());
   if (window._monthChipOnChange) window._monthChipOnChange(ym);
   else location.reload();
 }

@@ -7,13 +7,37 @@
 <link rel="stylesheet" href="style.css">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+  .diff-box {
+    background: var(--cream-deep); padding: 12px 16px; border-radius: var(--r-sm);
+    margin: 6px 0; font-size: 12.5px; font-family: 'Fira Code', monospace;
+    max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    direction: ltr; text-align: left;
+  }
+  .diff-box.before { background: #fef3f2; border-right: 3px solid var(--danger); }
+  .diff-box.after { background: #e6f3eb; border-right: 3px solid var(--success); }
+  .diff-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 720px) { .diff-wrap { grid-template-columns: 1fr; } }
+  .revert-badge {
+    display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;
+    background:#e6f3eb;color:var(--success);margin-right:4px;
+  }
+  .expand-row { background: var(--cream); padding: 14px; border-top: 1px solid var(--border); }
+  .action-badge { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+  .action-new { background: #e6f3eb; color: var(--success); }
+  .action-update { background: #fdf7e3; color: #8b6a1e; }
+  .action-remove { background: #fef3f2; color: var(--danger); }
+  .action-revert { background: #e0dcff; color: #4a2c7a; }
+  .action-other { background: var(--cream-deep); color: var(--muted); }
+</style>
 </head>
 <body>
 
 <div class="topbar">
   <h1>📜 سجل التغييرات</h1>
   <div class="right">
-    <a href="home.html">الرئيسية</a>
+    <a href="home.html">🏠 الرئيسية</a>
+    <span id="monthChipHolder"></span>
     <a href="admin.html" class="hide-mobile">إدارة</a>
     <a onclick="createFullBackup()" class="btn-backup">💾 Backup</a>
     <span class="logout" onclick="logout()">خروج</span>
@@ -22,15 +46,29 @@
 
 <div class="container">
 
+  <div class="card" style="background:#fdf7e3;border-right:4px solid var(--warn);color:#6d4e00">
+    <h3 style="margin:0 0 6px;color:#6d4e00">⟲ القدرة على التراجع</h3>
+    <p style="margin:0;font-size:13px">كل تعديل محفوظ بـ <b>before + after</b> بشكل كامل. اضغط على ⟲ تراجع لأي تعديل لإرجاعه. التراجع نفسه يُسجَّل كـ audit entry جديد.</p>
+  </div>
+
   <div class="card">
     <div class="toolbar">
       <input type="text" id="search" placeholder="بحث..." oninput="render()">
       <select id="filterAction" onchange="render()">
         <option value="">كل الإجراءات</option>
-        <option value="kafala">تعديل كفالة</option>
-        <option value="edit">تعديلات شهرية</option>
-        <option value="backup">النسخ الاحتياطية</option>
-        <option value="close">إقفال شهر</option>
+        <option value="kafala_new">كفالة جديدة</option>
+        <option value="kafala_update">تعديل كفالة</option>
+        <option value="funding_add">إضافة مصدر تمويل</option>
+        <option value="funding_update">تعديل تمويل</option>
+        <option value="funding_remove">حذف تمويل</option>
+        <option value="add_person">إضافة شخص</option>
+        <option value="edit_person">تعديل شخص</option>
+        <option value="revert">تراجعات</option>
+        <option value="close_month">إقفال شهر</option>
+      </select>
+      <select id="filterRevertable" onchange="render()">
+        <option value="">الكل</option>
+        <option value="yes">قابل للتراجع فقط</option>
       </select>
       <div class="spacer"></div>
       <span class="text-sm text-muted" id="countInfo">—</span>
@@ -40,9 +78,10 @@
         <thead><tr>
           <th>الوقت</th>
           <th>الإجراء</th>
-          <th>المسار</th>
-          <th>قبل</th>
-          <th>بعد</th>
+          <th>الهدف</th>
+          <th>الشهر</th>
+          <th>التفاصيل</th>
+          <th>إجراءات</th>
         </tr></thead>
         <tbody id="auditBody"></tbody>
       </table>
@@ -51,42 +90,189 @@
 
 </div>
 
+<div id="modalContainer"></div>
+
 <script src="config.js"></script>
 <script>
 if (!checkAuth()) throw new Error('auth');
 initFirebase();
+renderMonthChip('monthChipHolder', () => location.reload());
 
 let allAudit = [];
+let allPeople = {};
 
 async function load() {
-  const snap = await ref('audit').orderByChild('ts').limitToLast(500).once('value');
-  const data = snap.val() || {};
+  const [auditSnap, peopleSnap] = await Promise.all([
+    ref('audit').orderByChild('ts').limitToLast(1000).once('value'),
+    ref('people').once('value')
+  ]);
+  const data = auditSnap.val() || {};
+  allPeople = peopleSnap.val() || {};
   allAudit = Object.entries(data).map(([id, e]) => ({id, ...e})).sort((a,b) => b.ts - a.ts);
   render();
+}
+
+function actionClass(action) {
+  if (!action) return 'action-other';
+  if (action.includes('new') || action.includes('add')) return 'action-new';
+  if (action.includes('remove') || action.includes('delete')) return 'action-remove';
+  if (action.includes('revert') || action.includes('undo')) return 'action-revert';
+  if (action.includes('update') || action.includes('edit')) return 'action-update';
+  return 'action-other';
+}
+
+function actionLabel(action) {
+  const labels = {
+    kafala_new: '➕ كفالة جديدة',
+    kafala_update: '✏️ تعديل كفالة',
+    funding_add: '➕ مصدر تمويل',
+    funding_update: '✏️ تعديل تمويل',
+    funding_remove: '❌ حذف تمويل',
+    amount: '💰 تعديل مبلغ',
+    taweed: '🔄 تويد',
+    prepay: '📅 دفع مقدماً',
+    add_person: '👤 شخص جديد',
+    edit_person: '✏️ تعديل شخص',
+    close_month: '🔒 إقفال شهر',
+    save_draft: '💾 حفظ مسودة',
+    restore_backup: '♻️ استرداد',
+    revert: '⟲ تراجع',
+    queue_oneoff: '⚡ زيادة وقتية'
+  };
+  return labels[action] || action || '—';
 }
 
 function render() {
   const q = document.getElementById('search').value.trim().toLowerCase();
   const filter = document.getElementById('filterAction').value;
+  const revertableOnly = document.getElementById('filterRevertable').value === 'yes';
 
   let items = allAudit;
-  if (filter) items = items.filter(a => a.action && a.action.includes(filter));
+  if (filter === 'revert') items = items.filter(a => (a.action||'').includes('revert'));
+  else if (filter) items = items.filter(a => (a.action||'').includes(filter));
+  if (revertableOnly) items = items.filter(a => a.revertable);
   if (q) items = items.filter(a =>
-    (a.action||'').toLowerCase().includes(q) ||
-    (a.path||'').toLowerCase().includes(q)
+    ((a.action||'').toLowerCase().includes(q)) ||
+    ((a.path||'').toLowerCase().includes(q)) ||
+    (JSON.stringify(a.before||'').toLowerCase().includes(q)) ||
+    (JSON.stringify(a.after||'').toLowerCase().includes(q))
   );
 
-  document.getElementById('auditBody').innerHTML = items.slice(0, 200).map(a => `
-    <tr>
+  const limit = 200;
+  document.getElementById('auditBody').innerHTML = items.slice(0, limit).map(a => {
+    const isRevertable = a.revertable && a.revert_action && a.revert_target;
+    const isAlreadyReverted = allAudit.some(x => x.reverted_from === a.id);
+    const targetLabel = guessTargetLabel(a);
+    const revertBtn = isRevertable && !isAlreadyReverted
+      ? `<button class="btn-small" onclick="revertEntry('${a.id}')" style="background:var(--warn);color:#fff">⟲ تراجع</button>`
+      : (isAlreadyReverted ? '<span class="revert-badge">✓ تم التراجع</span>' : '');
+    return `
+    <tr onclick="toggleRow('${a.id}', event)" style="cursor:pointer">
       <td class="text-xs text-muted" style="white-space:nowrap">${new Date(a.ts).toLocaleString('ar-EG')}</td>
-      <td><span class="badge">${a.action}</span></td>
-      <td class="text-xs font-mono" style="color:var(--muted)">${a.path||'—'}</td>
-      <td class="text-xs">${a.before ? JSON.stringify(a.before).slice(0,80) : '—'}</td>
-      <td class="text-xs">${a.after ? JSON.stringify(a.after).slice(0,80) : '—'}</td>
+      <td><span class="action-badge ${actionClass(a.action)}">${actionLabel(a.action)}</span></td>
+      <td class="text-sm">${targetLabel}</td>
+      <td class="text-xs text-muted">${a.month ? arabicMonth(a.month) : '—'}</td>
+      <td class="text-xs font-mono" style="color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.path||'—'}</td>
+      <td onclick="event.stopPropagation()">${revertBtn}</td>
     </tr>
-  `).join('');
+    <tr id="expand_${a.id}" style="display:none">
+      <td colspan="6" class="expand-row">
+        <div class="diff-wrap">
+          <div>
+            <h4 style="margin:0 0 4px;color:var(--danger)">◀ قبل التعديل</h4>
+            <div class="diff-box before">${a.before === null || a.before === undefined ? '— لا يوجد (إضافة جديدة) —' : escapeHtml(JSON.stringify(a.before, null, 2))}</div>
+          </div>
+          <div>
+            <h4 style="margin:0 0 4px;color:var(--success)">◀ بعد التعديل</h4>
+            <div class="diff-box after">${a.after === null || a.after === undefined ? '— محذوف —' : escapeHtml(JSON.stringify(a.after, null, 2))}</div>
+          </div>
+        </div>
+        ${a.note ? `<div style="margin-top:10px;padding:8px 12px;background:var(--cream-deep);border-radius:6px;font-size:12.5px"><b>ملاحظة:</b> ${escapeHtml(a.note)}</div>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
 
-  document.getElementById('countInfo').textContent = `${items.length} / ${allAudit.length}`;
+  document.getElementById('countInfo').textContent = `${Math.min(items.length, limit)} / ${items.length} (من ${allAudit.length})`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function guessTargetLabel(a) {
+  // Try to extract a human-readable label
+  const after = a.after || {};
+  const before = a.before || {};
+  if (after.child || before.child) return `<b>${after.child || before.child}</b>`;
+  if (after.name || before.name) return `<b>${after.name || before.name}</b>`;
+  if (a.revert_target) return `<code style="font-size:11px">${a.revert_target.slice(0,16)}</code>`;
+  return '—';
+}
+
+function toggleRow(id, ev) {
+  if (ev.target.tagName === 'BUTTON') return;
+  const row = document.getElementById(`expand_${id}`);
+  if (row) row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+}
+
+async function revertEntry(entryId) {
+  const entry = allAudit.find(a => a.id === entryId);
+  if (!entry) return toast('Entry not found', 'error');
+
+  const label = guessTargetLabel(entry);
+  const ok = await confirmImpact({
+    title: '⟲ تأكيد التراجع',
+    message: `سيتم إرجاع الحالة قبل هذا التعديل.`,
+    impact: [
+      `الإجراء الأصلي: <b>${actionLabel(entry.action)}</b>`,
+      `الهدف: ${label}`,
+      `الوقت: <b>${new Date(entry.ts).toLocaleString('ar-EG')}</b>`,
+      `<b>⚠️ سيُكتب التراجع كـ audit entry جديد و يمكن تراجعه أيضاً</b>`
+    ],
+    danger: true
+  });
+  if (!ok) return;
+
+  try {
+    const action = entry.revert_action;
+    const target = entry.revert_target;
+
+    if (action === 'restore_kafala') {
+      await ref(`kafalat/${target}`).set(entry.before);
+    } else if (action === 'delete_kafala') {
+      await ref(`kafalat/${target}`).remove();
+    } else if (action === 'restore_funding_array') {
+      await ref(`kafalat/${target}/funding`).set(entry.before);
+      await ref(`kafalat/${target}/updated_at`).set(Date.now());
+    } else if (action === 'restore_person') {
+      await ref(`people/${target}`).set(entry.before);
+    } else if (action === 'delete_person') {
+      await ref(`people/${target}`).remove();
+    } else {
+      return toast('Unknown revert action: ' + action, 'error');
+    }
+
+    // Log the revert itself
+    await ref('audit').push({
+      ts: Date.now(),
+      author: 'youssef',
+      action: 'revert',
+      path: entry.path,
+      before: entry.after,  // we swap - what was "after" is now "before"
+      after: entry.before,
+      reverted_from: entry.id,
+      reverted_action: entry.action,
+      revertable: true,
+      revert_action: action === 'delete_kafala' ? 'restore_kafala' : (action === 'delete_person' ? 'restore_person' : action),
+      revert_target: target
+    });
+
+    toast('✓ تم التراجع — راجع admin', 'success');
+    await load();
+  } catch(e) {
+    toast('فشل التراجع: ' + e.message, 'error');
+    console.error(e);
+  }
 }
 
 load();

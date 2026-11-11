@@ -545,15 +545,16 @@ async function saveKafala(kid) {
   });
   if (!ok) return;
 
-  // IMMEDIATE APPLY to Firebase + audit log
-  const before = {
-    child: k.child, guardian_id: k.guardian_id, area: k.area,
-    case_type: k.case_type, status: k.status,
-    child_gender: k.child_gender, child_dob: k.child_dob,
-    school_level: k.school_level, subtype: k.subtype, special_notes: k.special_notes
-  };
+  // FULL SNAPSHOT before + after for revert capability
+  const fullBefore = JSON.parse(JSON.stringify(k));  // full state
+  const fullAfter = {...k, ...updates};
   await ref(`kafalat/${kid}`).update(updates);
-  await auditLog('kafala_update', `kafalat/${kid}`, before, updates, {month: CURRENT_MONTH});
+  await auditLog('kafala_update', `kafalat/${kid}`, fullBefore, fullAfter, {
+    month: CURRENT_MONTH,
+    revertable: true,
+    revert_action: 'restore_kafala',
+    revert_target: kid
+  });
   toast('✓ تم تطبيق التعديل', 'success');
   closeModal();
   await load();
@@ -723,10 +724,15 @@ async function saveNewKafala() {
   });
   if (!ok) return;
 
-  // IMMEDIATE APPLY
+  // IMMEDIATE APPLY + full audit for revert
   const kid = 'k_' + uid();
   await ref(`kafalat/${kid}`).set(newKafala);
-  await auditLog('kafala_new', `kafalat/${kid}`, null, {kid, child, amount}, {month: CURRENT_MONTH});
+  await auditLog('kafala_new', `kafalat/${kid}`, null, newKafala, {
+    month: CURRENT_MONTH,
+    revertable: true,
+    revert_action: 'delete_kafala',
+    revert_target: kid
+  });
   toast('✓ تم إنشاء الكفالة', 'success');
   closeModal();
   await load();
@@ -799,11 +805,18 @@ async function saveAddFunding(kid) {
   });
   if (!ok) return;
 
-  // IMMEDIATE APPLY
+  // IMMEDIATE APPLY + full audit
+  const fullBefore = JSON.parse(JSON.stringify(k.funding || []));
   const updatedFunding = [...(k.funding || []), funding];
   await ref(`kafalat/${kid}/funding`).set(updatedFunding);
   await ref(`kafalat/${kid}/updated_at`).set(Date.now());
-  await auditLog('funding_add', `kafalat/${kid}/funding`, null, funding, {month: CURRENT_MONTH});
+  await auditLog('funding_add', `kafalat/${kid}/funding`, fullBefore, updatedFunding, {
+    month: CURRENT_MONTH,
+    revertable: true,
+    revert_action: 'restore_funding_array',
+    revert_target: kid,
+    added_fid: funding.fid
+  });
   toast('✓ تم إضافة المصدر', 'success');
   closeModal();
   await load();
@@ -926,11 +939,13 @@ async function saveEditFunding(kid, fid) {
     await auditLog('queue_oneoff', `months/${CURRENT_MONTH}/edits/${editId}`, null, after);
     toast('✓ أُضيف للطابور (وقتية)', 'success');
   } else {
-    // IMMEDIATE APPLY to Firebase
+    // IMMEDIATE APPLY + FULL SNAPSHOT for revert
+    const fullBeforeFunding = JSON.parse(JSON.stringify(k.funding || []));
     const funding = [...(k.funding || [])];
     const idx = funding.findIndex(x => x.fid === fid);
     if (idx < 0) { toast('❌ Funding not found', 'error'); return; }
 
+    const removedEntry = editType === 'funding_remove' ? JSON.parse(JSON.stringify(funding[idx])) : null;
     if (editType === 'funding_remove') {
       funding.splice(idx, 1);
     } else {
@@ -938,7 +953,16 @@ async function saveEditFunding(kid, fid) {
     }
     await ref(`kafalat/${kid}/funding`).set(funding);
     await ref(`kafalat/${kid}/updated_at`).set(Date.now());
-    await auditLog(editType, `kafalat/${kid}/funding/${fid}`, {amount: f.amount, kafeel_id: f.kafeel_id, pt_id: f.pt_id, prepaid_through: f.prepaid_through}, after, {month: CURRENT_MONTH, note});
+    await auditLog(editType, `kafalat/${kid}/funding/${fid}`, fullBeforeFunding, funding, {
+      month: CURRENT_MONTH,
+      note,
+      revertable: true,
+      revert_action: 'restore_funding_array',
+      revert_target: kid,
+      fid,
+      removed_entry: removedEntry,
+      edit_sub_type: editType
+    });
     toast('✓ تم التعديل', 'success');
   }
   closeModal();
@@ -1001,9 +1025,12 @@ async function saveNewPerson(callback) {
   };
 
   const pid = 'p_' + uid();
-  // Write directly to people (new entities don't go through monthly queue)
   await ref(`people/${pid}`).set(person);
-  await auditLog('add_person', `people/${pid}`, null, person);
+  await auditLog('add_person', `people/${pid}`, null, person, {
+    revertable: true,
+    revert_action: 'delete_person',
+    revert_target: pid
+  });
   toast('✓ تمت الإضافة', 'success');
   allPeople[pid] = person;
   if (callback) callback(pid);
@@ -1079,8 +1106,14 @@ async function saveEditPerson(pid) {
   });
   if (!ok) return;
 
+  const fullBefore = JSON.parse(JSON.stringify(p));
+  const fullAfter = {...p, ...updates};
   await ref(`people/${pid}`).update(updates);
-  await auditLog('edit_person', `people/${pid}`, p, updates);
+  await auditLog('edit_person', `people/${pid}`, fullBefore, fullAfter, {
+    revertable: true,
+    revert_action: 'restore_person',
+    revert_target: pid
+  });
   Object.assign(allPeople[pid], updates);
   toast('✓ تم التعديل', 'success');
   closeModal();

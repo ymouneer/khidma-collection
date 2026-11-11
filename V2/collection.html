@@ -301,8 +301,6 @@
 
   <div class="salawat-banner" id="salawat">اللهم صلّ على محمد و على آل محمد</div>
 
-  <div class="month-switch" id="monthSwitch"></div>
-
   <div class="progress-section">
     <div class="title" id="progressTitle">متابعة التحصيل</div>
     <div class="main" id="progressMain">—</div>
@@ -382,7 +380,6 @@ async function load() {
     CURRENT_MONTH = getWorkingMonth();
     renderMonthChip('monthChipHolder', (ym) => { CURRENT_MONTH = ym; load(); });
     [allKafalat, allPeople] = await Promise.all([fetchKafalat(), fetchPeople()]);
-    setupMonthSwitch();
     renderCollectorTabs();
     await loadMonth();
     setCloudStatus('ok', '☁️ متصل');
@@ -399,27 +396,7 @@ async function load() {
   }
 }
 
-function setupMonthSwitch() {
-  const now = new Date();
-  const curYm = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const prev = new Date(now.getFullYear(), now.getMonth()-1, 1);
-  const prevYm = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
-  CURRENT_MONTH = curYm;
-  const months = [prevYm, curYm];
-  document.getElementById('monthSwitch').innerHTML = months.map(ym => `
-    <div class="month-btn ${ym===CURRENT_MONTH?'active':''}" onclick="switchMonth('${ym}')">
-      <div class="label">${arabicMonth(ym).split(' ')[0]}</div>
-      <div class="amount">${arabicMonth(ym).split(' ')[1]}</div>
-    </div>
-  `).join('');
-}
-
-function switchMonth(ym) {
-  CURRENT_MONTH = ym;
-  document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
-  event.currentTarget.classList.add('active');
-  loadMonth();
-}
+// Month switching handled by Smart Month Chip in topbar
 
 async function loadMonth() {
   const snap = await ref(`months/${CURRENT_MONTH}/collection`).once('value');

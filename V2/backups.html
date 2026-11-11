@@ -13,7 +13,8 @@
 <div class="topbar">
   <h1>💾 النسخ الاحتياطية</h1>
   <div class="right">
-    <a href="home.html">الرئيسية</a>
+    <a href="home.html">🏠 الرئيسية</a>
+    <span id="monthChipHolder"></span>
     <a href="admin.html" class="hide-mobile">إدارة</a>
     <a href="closure.html" class="hide-mobile">إقفال</a>
     <span class="logout" onclick="logout()">خروج</span>
@@ -51,6 +52,7 @@
 <script>
 if (!checkAuth()) throw new Error('auth');
 initFirebase();
+renderMonthChip('monthChipHolder', () => location.reload());
 
 async function loadBackups() {
   try {
