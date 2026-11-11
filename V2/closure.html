@@ -1201,7 +1201,7 @@ function renderStep7() {
   document.getElementById('step7Preview').innerHTML = '';
 }
 
-// Export detailed CSV — one row per guardian/case, with clear Amount + Extra + Total columns
+// Export detailed CSV — one row per sponsorship (funding entry). Zakat is its own row.
 function exportAreaDetailed(area) {
   const effective = effectiveKafalat();
   const dist = state.zakat_distribution || {};
@@ -1209,7 +1209,7 @@ function exportAreaDetailed(area) {
 
   const rows = [[
     '#','المنطقة','نوع الحالة','ولي الأمر / الحالة','اسم الطفل','تاريخ الميلاد',
-    'الكفلاء','المبلغ الأساسي','الإضافي (زكاة)','إجمالي الصرف هذا الشهر','ملاحظات'
+    'الكفيل','المبلغ الأساسي','الإضافي (زكاة)','الإجمالي','ملاحظات'
   ]];
 
   const byGuardian = {};
@@ -1219,26 +1219,8 @@ function exportAreaDetailed(area) {
     let label, key;
     if (gid && allPeople[gid]?.name) { label = allPeople[gid].name; key = 'g:' + gid; }
     else { label = k.child || (k.case_type||'').replace(/_/g,' '); key = 'k:' + kid; }
-    if (!byGuardian[key]) byGuardian[key] = {
-      name: label, gid: gid || key, kafalat: [],
-      base: 0, kafeels: new Set(), children: new Set(), caseTypes: new Set(),
-      childDobs: new Set(), notes: new Set()
-    };
+    if (!byGuardian[key]) byGuardian[key] = { name: label, gid: gid || key, kafalat: [] };
     byGuardian[key].kafalat.push(k);
-    if (k.child) byGuardian[key].children.add(k.child);
-    if (k.child_dob) byGuardian[key].childDobs.add(k.child_dob);
-    if (k.case_type) byGuardian[key].caseTypes.add(k.case_type.replace(/_/g,' '));
-    (k.funding||[]).forEach(f => {
-      byGuardian[key].base += f.amount || 0;
-      if (f.source === 'kafeel' && f.kafeel_id && allPeople[f.kafeel_id]?.name) {
-        byGuardian[key].kafeels.add(allPeople[f.kafeel_id].name);
-      } else if (f.source === 'sadaqat') {
-        byGuardian[key].kafeels.add('صدقات');
-      } else if (f.source === 'zakat') {
-        byGuardian[key].kafeels.add('زكاة');
-      }
-      if (f.notes) byGuardian[key].notes.add(f.notes);
-    });
   });
 
   const sortedKeys = Object.keys(byGuardian).sort((a,b) =>
@@ -1250,27 +1232,45 @@ function exportAreaDetailed(area) {
     const g = byGuardian[key];
     if (excluded.has(g.gid)) return;
     serial++;
-    const extra = dist[g.gid] || 0;
-    const total = g.base + extra;
-    grandBase += g.base; grandZakat += extra; grandTotal += total;
-    rows.push([
-      serial,
-      areaDisplay(area),
-      [...g.caseTypes].join(' + '),
-      g.name,
-      [...g.children].join(' + '),
-      [...g.childDobs].join(' + '),
-      [...g.kafeels].join(' + '),
-      g.base,
-      extra || '',
-      total,
-      [...g.notes].join(' | ')
-    ]);
+
+    g.kafalat.forEach(k => {
+      (k.funding||[]).forEach(f => {
+        const kafeelLabel = f.source === 'kafeel' && f.kafeel_id
+          ? (allPeople[f.kafeel_id]?.name || '—')
+          : (f.source === 'sadaqat' ? 'صدقات'
+          : f.source === 'zakat' ? 'زكاة' : '—');
+        const amt = f.amount || 0;
+        rows.push([
+          serial,
+          areaDisplay(area),
+          (k.case_type||'').replace(/_/g,' '),
+          g.name,
+          k.child || '',
+          k.child_dob || '',
+          kafeelLabel,
+          amt,
+          '',
+          amt,
+          f.notes || ''
+        ]);
+        grandBase += amt;
+        grandTotal += amt;
+      });
+    });
+
+    const zakatAmt = dist[g.gid] || 0;
+    if (zakatAmt > 0) {
+      rows.push([
+        serial, areaDisplay(area), '', g.name, '', '',
+        'زكاة توزيع', '', zakatAmt, zakatAmt, 'توزيع زكاة الشهر'
+      ]);
+      grandZakat += zakatAmt;
+      grandTotal += zakatAmt;
+    }
   });
 
   rows.push([]);
   rows.push(['','','','','','','المجموع:', grandBase, grandZakat, grandTotal, '']);
-  rows.push(['','','','','','','المستثنى:', excluded.size, '', '', '']);
 
   const csv = '﻿' + rows.map(r =>
     r.map(c => {
@@ -1288,7 +1288,7 @@ function exportAreaDetailed(area) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  toast(`✓ تم تصدير ${serial} ولي أمر — مع ${excluded.size} مُستثنى`, 'success');
+  toast(`✓ تم تصدير ${serial} ولي أمر`, 'success');
 }
 
 function renderAreaReport(area, skipScroll) {
