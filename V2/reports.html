@@ -136,14 +136,33 @@
   }
 
   @media print {
-    @page { margin: 12mm; }
+    @page { margin: 10mm 12mm; }
     .no-print, .excl-check, .excl-toolbar, .hero-controls, .topbar,
     .report-grid, .cmp-months, .month-row, .mode-tabs { display: none !important; }
     .guardian-group-row.excluded { display: none !important; }
-    body { background: #fff !important; }
-    .report-preview, .card { box-shadow: none !important; border: none !important; }
+    body { background: #fff !important; font-size: 11pt; }
+    .report-preview, .card { box-shadow: none !important; border: none !important; padding: 0 !important; margin: 0 !important; }
     .container { padding: 0 !important; max-width: 100% !important; }
+    /* REPEAT the table header on every printed page */
+    thead { display: table-header-group !important; }
+    tfoot { display: table-footer-group !important; }
+    /* Try to keep guardian groups together on one page */
+    tr { page-break-inside: avoid; }
+    /* Hide the on-screen h2 heading (we add one inside thead to repeat on all pages) */
+    .report-preview > h2, .report-preview > .text-sm { display: none !important; }
+    .print-title { display: table-row !important; }
+    .print-title th {
+      background: var(--accent) !important; color: #fff !important;
+      font-size: 14pt !important; padding: 10px !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    table th {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
   }
+  .print-title { display: none; }
 </style>
 </head>
 <body>
@@ -352,13 +371,24 @@ function toggleReportExclude(area, gid) {
   const s = getExcluded(selectedMonth, area);
   if (s.has(gid)) s.delete(gid); else s.add(gid);
   setExcluded(selectedMonth, area, s);
-  renderAreaReport(area, true); // skip scroll
-  renderTiles();
+  renderAreaReport(area, true); // skip scroll, keep preview visible
+  // Update ONLY that tile's excluded count (don't re-render tiles — would wipe preview)
+  updateTileExcludedCount(area);
 }
 function clearReportExcluded(area) {
   setExcluded(selectedMonth, area, new Set());
   renderAreaReport(area, true);
-  renderTiles();
+  updateTileExcludedCount(area);
+}
+
+// Update the "N مُستثنى" sub-label on a single tile without touching the preview
+function updateTileExcludedCount(area) {
+  const tile = document.querySelector(`#tileGrid button[onclick*="'${area}'"]`)?.closest('.report-tile');
+  if (!tile) return;
+  const sub = tile.querySelector('.sub');
+  if (!sub) return;
+  const n = getExcluded(selectedMonth, area).size;
+  sub.textContent = n ? `${n} مُستثنى` : 'التقرير الكامل';
 }
 
 function normArabic(s) {
@@ -474,11 +504,14 @@ function renderAreaReport(area, skipScroll) {
         💡 اكتب جزء من الاسم للفلترة السريعة، ثم اضغط مربع الاستثناء جنب كل واحد لإخفائه من التقرير.
       </div>
       <table>
-        <thead><tr>
-          <th class="no-print" style="width:44px">استثناء</th>
-          <th style="width:36px">#</th>
-          <th>ولي الأمر</th><th>الطفل</th><th>الكفيل</th><th>المبلغ</th>
-        </tr></thead>
+        <thead>
+          <tr class="print-title"><th colspan="5">📋 تقرير ${areaDisplay(area)} — ${arabicMonth(selectedMonth)}</th></tr>
+          <tr>
+            <th class="no-print" style="width:44px">استثناء</th>
+            <th style="width:36px">#</th>
+            <th>ولي الأمر</th><th>الطفل</th><th>الكفيل</th><th>المبلغ</th>
+          </tr>
+        </thead>
         <tbody>${rows}
           <tr style="background:var(--accent);color:#fff;font-weight:700">
             <td class="no-print"></td>

@@ -331,17 +331,34 @@
     font-size: 13.5px; line-height: 1.8; margin-top: 10px;
   }
   @media print {
-    @page { margin: 12mm; }
+    @page { margin: 10mm 12mm; }
     .no-print, .excl-check, .excl-toolbar, .topbar, .step-tabs,
     .report-grid, .nav-row, .stats { display: none !important; }
     .guardian-group-row.excluded { display: none !important; }
-    body { background: #fff !important; }
-    .report-preview, .card { box-shadow: none !important; border: none !important; }
+    body { background: #fff !important; font-size: 11pt; }
+    .report-preview, .card { box-shadow: none !important; border: none !important; padding: 0 !important; margin: 0 !important; }
     .container, .container-wide { padding: 0 !important; max-width: 100% !important; }
     /* only show the currently-active step panel in print */
     .step-panel { display: none !important; }
     .step-panel.active { display: block !important; }
+    /* Repeat column header on every printed page */
+    thead { display: table-header-group !important; }
+    tfoot { display: table-footer-group !important; }
+    tr { page-break-inside: avoid; }
+    .report-preview > h2, .report-preview > .text-sm { display: none !important; }
+    .print-title { display: table-row !important; }
+    .print-title th {
+      background: var(--accent) !important; color: #fff !important;
+      font-size: 14pt !important; padding: 10px !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    table th {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
   }
+  .print-title { display: none; }
 </style>
 
 <div id="modalContainer"></div>
@@ -1270,11 +1287,14 @@ function renderAreaReport(area, skipScroll) {
       </div>
 
       <table>
-        <thead><tr>
-          <th class="no-print" style="width:44px">استثناء</th>
-          <th style="width:36px">#</th>
-          <th>ولي الأمر</th><th>الطفل</th><th>الكفيل</th><th>المبلغ</th>
-        </tr></thead>
+        <thead>
+          <tr class="print-title"><th colspan="5">📋 تقرير ${areaDisplay(area)} — ${arabicMonth(CURRENT_MONTH)}</th></tr>
+          <tr>
+            <th class="no-print" style="width:44px">استثناء</th>
+            <th style="width:36px">#</th>
+            <th>ولي الأمر</th><th>الطفل</th><th>الكفيل</th><th>المبلغ</th>
+          </tr>
+        </thead>
         <tbody>${rows}
           <tr style="background:var(--accent);color:#fff;font-weight:700">
             <td class="no-print"></td>
@@ -1528,8 +1548,9 @@ async function closeMonth() {
     applied_edits_counts: appliedCounts
   };
 
-  // Save month record
-  await ref(`months/${CURRENT_MONTH}`).set({
+  // Save month record — using .update() to PRESERVE other children (notes, etc.)
+  // Previously .set() was wiping /notes and anything else under the month node
+  await ref(`months/${CURRENT_MONTH}`).update({
     status: 'closed',
     closed_at: Date.now(),
     totals: snapshot.totals,
