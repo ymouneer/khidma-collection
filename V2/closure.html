@@ -99,6 +99,8 @@
     <button class="step-btn" data-step="4" onclick="goStep(4)"><span class="num">٤</span> توزيع الزكاة</button>
     <button class="step-btn" data-step="5" onclick="goStep(5)"><span class="num">٥</span> خطة التحويل</button>
     <button class="step-btn" data-step="6" onclick="goStep(6)"><span class="num">٦</span> المراجعة والإقفال</button>
+    <button class="step-btn" data-step="7" onclick="goStep(7)"><span class="num">٧</span> التقارير</button>
+    <button class="step-btn" data-step="8" onclick="goStep(8)"><span class="num">٨</span> الرسائل</button>
   </div>
 
   <!-- STEP 1 -->
@@ -254,11 +256,85 @@
       <div class="flex gap">
         <button class="btn-secondary" onclick="saveDraft()">💾 حفظ مسودة</button>
         <button class="btn-gold btn-lg" onclick="closeMonth()">🔒 إقفال الشهر</button>
+        <button class="btn-secondary" onclick="goStep(7)">التقارير ←</button>
       </div>
     </div>
   </div>
 
+  <!-- STEP 7: Area reports with exclude -->
+  <div class="step-panel" id="step7">
+    <div class="card">
+      <h3 style="margin-top:0">📋 تقارير المناطق</h3>
+      <div id="step7Status"></div>
+      <div class="report-grid" id="step7Tiles"></div>
+      <div id="step7Preview"></div>
+    </div>
+    <div class="nav-row">
+      <button class="btn-ghost" onclick="goStep(6)">→ السابق</button>
+      <button onclick="goStep(8)">الرسائل ←</button>
+    </div>
+  </div>
+
+  <!-- STEP 8: Messages -->
+  <div class="step-panel" id="step8">
+    <div class="card">
+      <h3 style="margin-top:0">💬 الرسائل الجاهزة للواتساب</h3>
+      <div id="step8Content"></div>
+    </div>
+    <div class="nav-row">
+      <button class="btn-ghost" onclick="goStep(7)">→ السابق</button>
+      <button class="btn-ghost" onclick="goStep(1)">⏮ العودة للبداية</button>
+    </div>
+  </div>
+
 </div>
+
+<style>
+  /* Step 7 & 8 extra styles */
+  .report-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px; margin: 14px 0;
+  }
+  .report-tile {
+    background: var(--cream); border: 1px solid var(--border-light);
+    border-radius: var(--r); padding: 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .report-tile h4 { margin: 0; color: var(--accent); font-size: 14px; }
+  .report-tile .amt { font-weight: 800; color: var(--accent); font-size: 18px; }
+  .report-tile .actions { display: flex; gap: 6px; margin-top: 4px; }
+
+  .report-preview {
+    background: #fff; border: 1px solid var(--border);
+    border-radius: var(--r); padding: 22px; margin-top: 18px;
+    box-shadow: var(--shadow-sm);
+  }
+  .excl-check {
+    display: inline-flex; width: 22px; height: 22px;
+    border: 2px solid var(--border); border-radius: 4px;
+    background: #fff; cursor: pointer;
+    align-items: center; justify-content: center;
+    font-size: 14px; color: var(--success); font-weight: 700;
+  }
+  .excl-check.checked { border-color: var(--danger,#d9534f); background: var(--danger,#d9534f); color: #fff; }
+  .guardian-group-row.excluded { opacity: 0.35; background: #f3f4f0 !important; }
+  .guardian-group-row.excluded td { text-decoration: line-through; }
+  .excl-toolbar {
+    display: flex; gap: 10px; margin-bottom: 10px; padding: 10px 14px;
+    background: var(--cream-deep); border-radius: var(--r-sm);
+    align-items: center; font-size: 13px;
+  }
+  .msg-box {
+    background: #fdfbf5; border: 1px solid var(--border-light);
+    border-radius: var(--r); padding: 18px;
+    font-family: inherit; white-space: pre-wrap;
+    font-size: 13.5px; line-height: 1.8; margin-top: 10px;
+  }
+  @media print {
+    .excl-check, .excl-toolbar { display: none !important; }
+    .guardian-group-row.excluded { display: none !important; }
+  }
+</style>
 
 <div id="modalContainer"></div>
 
@@ -1003,6 +1079,285 @@ function renderStep6() {
   }
 }
 
+// ========== STEP 7: REPORTS (with exclude) & STEP 8: MESSAGES ==========
+
+// Exclusion state stored per month+area in localStorage
+function exclKey(area) { return `rpt_excl_${CURRENT_MONTH}_${area}`; }
+function getExcluded(area) {
+  try { return new Set(JSON.parse(localStorage.getItem(exclKey(area)) || '[]')); }
+  catch(e) { return new Set(); }
+}
+function setExcluded(area, set) {
+  try { localStorage.setItem(exclKey(area), JSON.stringify([...set])); } catch(e) {}
+}
+function toggleReportExclude(area, gid) {
+  const s = getExcluded(area);
+  if (s.has(gid)) s.delete(gid); else s.add(gid);
+  setExcluded(area, s);
+  renderAreaReport(area);
+}
+function clearReportExcluded(area) {
+  setExcluded(area, new Set());
+  renderAreaReport(area);
+}
+
+// Compute display totals per area (respects effective kafalat + draft zakat distribution)
+function reportsByArea() {
+  const effective = effectiveKafalat();
+  const byArea = {};
+  const dist = state.zakat_distribution || {};
+  Object.values(effective).forEach(k => {
+    if (k.status !== 'active') return;
+    const area = k.area;
+    if (!byArea[area]) byArea[area] = {base: 0, zakat: 0, total: 0};
+    (k.funding||[]).forEach(f => {
+      if (!fundingNeedsPaymentThisMonth(f, CURRENT_MONTH)) return;
+      byArea[area].base += f.amount || 0;
+    });
+  });
+  Object.entries(dist).forEach(([gid, amt]) => {
+    const kafala = Object.values(effective).find(k => k.guardian_id === gid);
+    if (!kafala) return;
+    if (!byArea[kafala.area]) byArea[kafala.area] = {base: 0, zakat: 0, total: 0};
+    byArea[kafala.area].zakat += amt;
+  });
+  Object.keys(byArea).forEach(a => { byArea[a].total = byArea[a].base + byArea[a].zakat; });
+  return byArea;
+}
+
+function renderStep7() {
+  const byArea = reportsByArea();
+  const isClosed = false; // In closure wizard we're always editing draft or final
+  document.getElementById('step7Status').innerHTML = `
+    <div class="text-sm text-muted" style="margin-bottom:10px">
+      💡 معاينة التقارير باستخدام البيانات المحفوظة الآن (تعديلاتك + توزيع الزكاة في المسودة).
+      يمكنك استثناء أي ولي أمر من التقرير بضغطة.
+    </div>
+  `;
+  document.getElementById('step7Tiles').innerHTML = ['الصف','كفر_علو','المعصرة','أماكن_أخرى'].map(a => `
+    <div class="report-tile">
+      <h4>📋 ${areaDisplay(a)}</h4>
+      <div class="amt">${fmt(byArea[a]?.total||0)} ج</div>
+      <div class="text-xs text-muted">${getExcluded(a).size ? `${getExcluded(a).size} مُستثنى` : 'بدون استثناء'}</div>
+      <div class="actions">
+        <button class="btn-small" onclick="renderAreaReport('${a}')">معاينة</button>
+      </div>
+    </div>
+  `).join('');
+  document.getElementById('step7Preview').innerHTML = '';
+}
+
+function renderAreaReport(area) {
+  const effective = effectiveKafalat();
+  const dist = state.zakat_distribution || {};
+  const excluded = getExcluded(area);
+
+  // Group by guardian
+  const byGuardian = {};
+  Object.entries(effective).forEach(([id, k]) => {
+    if (k.area !== area || k.status !== 'active') return;
+    const gid = k.guardian_id;
+    if (!gid) return;
+    const gname = (allPeople[gid]||{}).name || '—';
+    if (!byGuardian[gname]) byGuardian[gname] = {kafalat: [], total: 0, gid};
+    (k.funding||[]).forEach(f => {
+      if (!fundingNeedsPaymentThisMonth(f, CURRENT_MONTH)) return;
+      const kafeelName = f.source === 'sadaqat' ? 'صدقات'
+                       : f.source === 'zakat'   ? 'زكاة'
+                       : (allPeople[f.kafeel_id]||{}).name || '—';
+      byGuardian[gname].kafalat.push({child: k.child, kafeel: kafeelName, amount: f.amount||0});
+      byGuardian[gname].total += f.amount || 0;
+    });
+  });
+  // Zakat distribution
+  Object.entries(dist).forEach(([gid, amt]) => {
+    const name = (allPeople[gid]||{}).name;
+    const kafala = Object.values(effective).find(k => k.guardian_id === gid);
+    if (!name || !kafala || kafala.area !== area) return;
+    if (!byGuardian[name]) byGuardian[name] = {kafalat: [], total: 0, gid};
+    byGuardian[name].zakat = amt;
+    byGuardian[name].total += amt;
+  });
+
+  const sorted = Object.entries(byGuardian).sort((a,b) => a[0].localeCompare(b[0]));
+
+  let rows = '', grand = 0, exclCount = 0, exclAmt = 0;
+  sorted.forEach(([gname, data]) => {
+    const isExcl = excluded.has(data.gid);
+    if (isExcl) { exclCount++; exclAmt += data.total; }
+    const kids = data.kafalat;
+    const rowCount = kids.length + (data.zakat ? 1 : 0);
+    const checkTd = `<td rowspan="${rowCount+1}" style="text-align:center;vertical-align:middle">
+      <span class="excl-check ${isExcl?'checked':''}" onclick="event.stopPropagation();toggleReportExclude('${area}','${data.gid}')">${isExcl?'✗':''}</span>
+    </td>`;
+    kids.forEach((k, i) => {
+      rows += `<tr class="guardian-group-row ${isExcl?'excluded':''}">
+        ${i===0 ? checkTd : ''}
+        ${i===0?`<td rowspan="${rowCount}" style="font-weight:600;vertical-align:middle">${gname}</td>`:''}
+        <td>${k.child||'—'}</td>
+        <td>${k.kafeel}</td>
+        <td class="font-mono">${fmt(k.amount)}</td>
+      </tr>`;
+      if (!isExcl) grand += k.amount;
+    });
+    if (data.zakat) {
+      rows += `<tr class="guardian-group-row ${isExcl?'excluded':''}">
+        <td>—</td><td><i>زكاة الشهر</i></td><td class="font-mono">${fmt(data.zakat)}</td>
+      </tr>`;
+      if (!isExcl) grand += data.zakat;
+    }
+    rows += `<tr class="guardian-group-row ${isExcl?'excluded':''}" style="background:var(--cream-deep);font-weight:700">
+      <td colspan="3" style="text-align:left">إجمالي ${gname}</td>
+      <td class="font-mono">${fmt(data.total)}</td>
+    </tr>`;
+  });
+
+  document.getElementById('step7Preview').innerHTML = `
+    <div class="report-preview">
+      <h2 style="color:var(--accent);margin:0 0 8px">📋 تقرير ${areaDisplay(area)} — ${arabicMonth(CURRENT_MONTH)}</h2>
+      <div class="text-sm text-muted" style="margin-bottom:12px">
+        عدد الأولياء الظاهر: <b>${sorted.length - exclCount}</b> من <b>${sorted.length}</b>
+      </div>
+
+      <div class="excl-toolbar">
+        <span>💡 اضغط مربع الاستثناء جنب أي ولي أمر لإخفائه (مفيد لحالات زي "قائمين عليها").</span>
+        <div class="spacer"></div>
+        <span><b style="color:var(--danger,#d9534f)">${exclCount}</b> مُستثنى (${fmt(exclAmt)} ج)</span>
+        ${exclCount>0 ? `<button class="btn-small btn-ghost" onclick="clearReportExcluded('${area}')">↻ إعادة الكل</button>`:''}
+      </div>
+
+      <table>
+        <thead><tr>
+          <th style="width:44px">استثناء</th>
+          <th>ولي الأمر</th><th>الطفل</th><th>الكفيل</th><th>المبلغ</th>
+        </tr></thead>
+        <tbody>${rows}
+          <tr style="background:var(--accent);color:#fff;font-weight:700">
+            <td colspan="4">الإجمالي ${exclCount>0 ? '(بعد الاستثناء)' : ''}</td>
+            <td class="font-mono">${fmt(grand)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="flex gap mt" style="justify-content:center">
+        <button onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+        <button class="btn-ghost" onclick="document.getElementById('step7Preview').innerHTML=''">× إغلاق المعاينة</button>
+      </div>
+    </div>
+  `;
+  setTimeout(() => {
+    document.getElementById('step7Preview').scrollIntoView({behavior:'smooth', block:'start'});
+  }, 50);
+}
+
+function renderStep8() {
+  const byArea = reportsByArea();
+  const grand = Object.values(byArea).reduce((s,a) => s + a.total, 0);
+
+  // Area totals adjusted by exclusions
+  const adj = {};
+  ['الصف','كفر_علو','المعصرة','أماكن_أخرى'].forEach(a => {
+    adj[a] = byArea[a]?.total || 0;
+    const excl = getExcluded(a);
+    const effective = effectiveKafalat();
+    excl.forEach(gid => {
+      const kafala = Object.values(effective).find(k => k.guardian_id === gid && k.area === a);
+      if (!kafala) return;
+      (kafala.funding||[]).forEach(f => {
+        if (fundingNeedsPaymentThisMonth(f, CURRENT_MONTH)) adj[a] -= f.amount || 0;
+      });
+      const z = (state.zakat_distribution||{})[gid] || 0;
+      adj[a] -= z;
+    });
+    adj[a] = Math.max(0, adj[a]);
+  });
+
+  const grandAdj = Object.values(adj).reduce((s,v) => s + v, 0);
+  const totalExcluded = ['الصف','كفر_علو','المعصرة','أماكن_أخرى'].reduce((s,a) => s + getExcluded(a).size, 0);
+
+  // Youssef / Nashwa split from state
+  const yousTotal = Object.values(state.youssef_by_area||{}).reduce((a,b)=>a+b,0);
+  const nashTotal = grandAdj - yousTotal;
+
+  // Nashwa message
+  let areaLines = '';
+  ['الصف','كفر_علو','المعصرة','أماكن_أخرى'].forEach(a => {
+    if (adj[a]) areaLines += `• ${areaDisplay(a)}: ${fmt(adj[a])}\n`;
+  });
+  const kafrFee = state.include_fee
+    ? `+ ${fmt(Math.round((adj['كفر_علو']||0) * 0.01))} رسوم ١٪ كفر علو\n`
+    : '';
+  const zakatUsed = Object.values(state.zakat_distribution||{}).reduce((a,b)=>a+b,0);
+  const zakatRecipients = Object.keys(state.zakat_distribution||{}).length;
+  const editsSummary = (monthAudit.length || pendingEdits.length)
+    ? `\n*تعديلات الشهر:*\n${monthAudit.length} دائم + ${pendingEdits.length} وقتي`
+    : '';
+
+  const nashwaMsg = `*السلام عليكم ورحمة الله وبركاته*
+*ملخص ${arabicMonth(CURRENT_MONTH)}*
+
+━━━━━━━━━━━━━━
+*خطة التحويل* 📊
+${areaLines}${kafrFee}
+الإجمالي الكلي: *${fmt(grandAdj)}*
+نصيبك: *${fmt(nashTotal)}*
+نصيبي: *${fmt(yousTotal)}*
+
+━━━━━━━━━━━━━━
+*بركة الصدقات* 🤲
+المدخلات الثابتة: ${fmt(state.fixed_sadaqat||4550)}
+من مبلغك للصدقات: ${fmt(state.sadaqat_to_pool||0)}
+
+*الزكاة* 💰
+المتاح للتوزيع: ${fmt(state.zakat_remaining||0)}
+الموزع: ${fmt(zakatUsed)} على ${zakatRecipients} مستحق (${fmt(state.zakat_share||300)} جنيه لكل)
+${editsSummary}
+
+━━━━━━━━━━━━━━
+جزاكم الله خيراً 🌸`;
+
+  // Per-sheikh messages
+  const sheikhMsgs = ['الصف','كفر_علو','المعصرة','أماكن_أخرى'].map(a => {
+    if (!adj[a]) return '';
+    const msg = `*السلام عليكم ورحمة الله*
+*ملخص ${arabicMonth(CURRENT_MONTH)} - منطقة ${areaDisplay(a)}*
+
+إجمالي المنطقة: *${fmt(adj[a])}* جنيه
+
+جزاكم الله خيراً 🌸`;
+    return {area: a, msg};
+  }).filter(x => x);
+
+  document.getElementById('step8Content').innerHTML = `
+    <div class="text-sm text-muted" style="margin-bottom:14px">
+      💡 الرسائل تحترم الاستثناءات اللي اختارتها في خطوة <b>التقارير</b>. انسخ وابعث على واتساب.
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="flex-between mb-sm">
+        <h3 style="margin:0">💬 رسالة نشوى</h3>
+        <button class="btn-gold" onclick="copyMsg('nashwaMsg')">📋 نسخ</button>
+      </div>
+      <div class="msg-box" id="nashwaMsg">${nashwaMsg}</div>
+    </div>
+
+    ${sheikhMsgs.map(({area, msg}) => `
+      <div class="card" style="margin-bottom:10px">
+        <div class="flex-between mb-sm">
+          <h3 style="margin:0">💬 شيخ ${areaDisplay(area)}</h3>
+          <button class="btn-gold btn-small" onclick="copyMsg('msg_${area}')">📋 نسخ</button>
+        </div>
+        <div class="msg-box" id="msg_${area}">${msg}</div>
+      </div>
+    `).join('')}
+  `;
+}
+
+function copyMsg(id) {
+  const t = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(t).then(() => toast('✓ تم النسخ', 'success'));
+}
+
 // ========== NAV & ACTIONS ==========
 
 function goStep(n) {
@@ -1026,6 +1381,8 @@ function goStep(n) {
     }
   }
   if (n===6) renderStep6();
+  if (n===7) renderStep7();
+  if (n===8) renderStep8();
   window.scrollTo(0,0);
 }
 
