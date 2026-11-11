@@ -174,7 +174,7 @@
           <thead><tr>
             <th>المنطقة</th>
             <th>الأم / ولي الأمر</th>
-            <th>الأساسي الحالي</th>
+            <th>الكفالة الأساسية</th>
             <th>زكاة (جنيه)</th>
           </tr></thead>
           <tbody id="zakatDist"></tbody>
@@ -382,8 +382,19 @@ function computeAreaTotals() {
 
     const gid = k.guardian_id;
     if (gid) {
-      if (!needyGuardians[gid]) needyGuardians[gid] = {area, total: 0};
-      needyGuardians[gid].total += monthBase;
+      // Zakat distribution excludes خبز cases (bread is collective, not per-mother zakat)
+      if (k.case_type === 'خبز') return;
+      // Also exclude the placeholder "خبز" guardian entity itself, if any kafala points to it
+      const guardianName = (allPeople[gid]||{}).name || '';
+      if (guardianName === 'خبز') return;
+
+      // Sum FIXED base across ALL children of this mother/guardian
+      // (ignore prepaid status — zakat ranking is based on structural need, not this month's cash)
+      const trueBase = kafalaBaseAmount(k);
+      if (!needyGuardians[gid]) needyGuardians[gid] = {area, total: 0, dueThisMonth: 0, childCount: 0};
+      needyGuardians[gid].total += trueBase;
+      needyGuardians[gid].dueThisMonth += monthBase;
+      needyGuardians[gid].childCount += 1;
     }
   });
 
@@ -568,6 +579,7 @@ function renderStep4() {
     <div class="stat"><div class="label">عدد الأمهات</div><div class="value">${Object.keys(state.zakat_distribution||{}).length}</div></div>
   </div>`;
 
+  // Ascending by TRUE fixed base — neediest (lowest base) first; excludes خبز cases
   const guardians = Object.entries(needyGuardians).map(([gid, info]) => ({gid, ...info}))
     .sort((a,b) => a.total - b.total);
 
@@ -576,10 +588,13 @@ function renderStep4() {
     const p = allPeople[g.gid];
     const name = p ? p.name : '—';
     const amt = dist[g.gid] || 0;
+    const kidsBadge = g.childCount > 1
+      ? `<span class="badge" style="margin-right:6px;background:var(--accent-ultra-light);color:var(--accent)">${g.childCount} أطفال</span>`
+      : '';
     return `<tr>
       <td><span class="badge">${areaDisplay(g.area)}</span></td>
-      <td>${name}</td>
-      <td class="font-mono">${fmt(g.total)}</td>
+      <td>${name}${kidsBadge}</td>
+      <td class="font-mono"><b>${fmt(g.total)}</b></td>
       <td><input type="number" value="${amt}" data-gid="${g.gid}" oninput="updateZakat(this)" style="width:100px;text-align:center"></td>
     </tr>`;
   }).join('');
