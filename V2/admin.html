@@ -588,15 +588,79 @@ async function saveKafala(kid) {
   await load();
 }
 
-// ============= PERSON SELECT (searchable) =============
+// ============= PERSON PICKER (type-to-search) =============
 function renderPersonSelect(id, value, filterRole) {
+  // Hidden input stores the actual person_id
+  // Visible input is a searchable text field with autocomplete
+  const selectedName = value && allPeople[value] ? allPeople[value].name : '';
+  return `<div class="person-picker" style="position:relative" data-role="${filterRole||''}">
+    <input type="text" id="${id}_search" value="${selectedName}" placeholder="اكتب للبحث..."
+      oninput="personPickerSearch('${id}', '${filterRole||''}', this.value)"
+      onfocus="personPickerSearch('${id}', '${filterRole||''}', this.value)"
+      onblur="setTimeout(()=>personPickerBlur('${id}'), 200)"
+      autocomplete="off" style="width:100%">
+    <input type="hidden" id="${id}" value="${value||''}">
+    <div id="${id}_dropdown" style="
+      display:none;position:absolute;top:100%;right:0;left:0;
+      background:#fff;border:1px solid var(--border);border-radius:6px;
+      max-height:220px;overflow-y:auto;z-index:50;
+      box-shadow:var(--shadow);margin-top:2px;
+    "></div>
+  </div>`;
+}
+
+function normalizeName(s) {
+  if (!s) return '';
+  return s.trim().toLowerCase()
+    .replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه')
+    .replace(/\s+/g,' ');
+}
+
+function personPickerSearch(hiddenId, filterRole, query) {
+  const qn = normalizeName(query);
   let people = Object.entries(allPeople).map(([pid,p])=>({pid,...p}));
   if (filterRole) people = people.filter(p => (p.roles||[]).includes(filterRole));
+  if (qn) people = people.filter(p => normalizeName(p.name).includes(qn));
   people.sort((a,b) => a.name.localeCompare(b.name));
-  return `<select id="${id}">
-    <option value="">— اختر —</option>
-    ${people.map(p => `<option value="${p.pid}" ${value===p.pid?'selected':''}>${p.name}</option>`).join('')}
-  </select>`;
+
+  const dd = document.getElementById(hiddenId + '_dropdown');
+  if (!dd) return;
+
+  if (people.length === 0) {
+    dd.innerHTML = `<div style="padding:10px 12px;color:var(--muted);font-size:12.5px;text-align:center">لا نتائج</div>`;
+  } else {
+    dd.innerHTML = people.slice(0, 50).map(p =>
+      `<div onclick="personPickerPick('${hiddenId}', '${p.pid}', ${JSON.stringify(p.name).replace(/"/g,'&quot;')})"
+        style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border-light)"
+        onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background='#fff'">
+        ${p.name}
+      </div>`
+    ).join('') + (people.length > 50 ? `<div style="padding:6px;color:var(--muted);font-size:11px;text-align:center">+ ${people.length-50} آخر</div>` : '');
+  }
+  dd.style.display = 'block';
+}
+
+function personPickerPick(hiddenId, pid, name) {
+  document.getElementById(hiddenId).value = pid;
+  document.getElementById(hiddenId + '_search').value = name;
+  document.getElementById(hiddenId + '_dropdown').style.display = 'none';
+}
+
+function personPickerBlur(hiddenId) {
+  const dd = document.getElementById(hiddenId + '_dropdown');
+  if (dd) dd.style.display = 'none';
+  // If search text doesn't match the selected ID, clear hidden
+  const search = document.getElementById(hiddenId + '_search');
+  const hidden = document.getElementById(hiddenId);
+  if (!search || !hidden) return;
+  const currentId = hidden.value;
+  if (currentId && allPeople[currentId]) {
+    const name = allPeople[currentId].name;
+    if (search.value !== name) {
+      // User cleared/edited the text — reset
+      if (!search.value.trim()) hidden.value = '';
+    }
+  }
 }
 
 function undoEdit(editId) {
@@ -756,6 +820,9 @@ function toggleCollectorChoice() {
 
 // Quick inline Add Person modal that STACKS on top (preserves parent state)
 function quickAddPerson(presetRole, targetFieldId) {
+  // Remember how many modals were already open (parent kafala, etc.)
+  // So after success we can close everything ABOVE this baseline.
+  window._parentModalCount = document.querySelectorAll('.modal-bg').length;
   modal('➕ إضافة ' + (presetRole==='guardian'?'ولي أمر':presetRole==='kafeel'?'كفيل':'PT (محصّل)') + ' جديد', `
     <div class="form-row">
       <div><label>الاسم *</label><input id="qp_name" placeholder="الاسم الكامل" autofocus></div>
@@ -786,17 +853,54 @@ function quickAddPerson(presetRole, targetFieldId) {
   `, async () => {
     const name = document.getElementById('qp_name').value.trim();
     if (!name) return toast('الاسم مطلوب', 'error');
+
+    // DUPLICATE CHECK — find existing people with similar name
+    const nameN = normalizeName(name);
+    const duplicates = Object.entries(allPeople)
+      .filter(([pid, p]) => normalizeName(p.name) === nameN)
+      .map(([pid, p]) => ({pid, ...p}));
+
+    if (duplicates.length > 0) {
+      // Show duplicate warning with options
+      const dupHtml = duplicates.map(d => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--border);border-radius:6px;margin:6px 0">
+          <div>
+            <div style="font-weight:600">${d.name}</div>
+            <div style="font-size:11px;color:var(--muted)">الأدوار: ${(d.roles||[]).join(', ')}${d.area ? ' · '+d.area : ''}</div>
+          </div>
+          <button class="btn-small" onclick="useExistingPerson('${d.pid}','${targetFieldId}','${presetRole}')">استخدم هذا</button>
+        </div>
+      `).join('');
+      modal('⚠️ اسم مكرر', `
+        <p style="color:#6d4e00">يوجد بالفعل شخص بنفس الاسم:</p>
+        ${dupHtml}
+        <p style="color:var(--muted);font-size:12px;margin-top:14px">
+          لو ده نفس الشخص، اضغط "استخدم هذا". لو شخص مختلف فعلاً، اضغط "إنشاء جديد رغم ذلك".
+        </p>
+      `, async () => {
+        // User chose to create anyway
+        await actuallyCreatePerson(name, presetRole, targetFieldId);
+      }, {saveLabel: '➕ إنشاء جديد رغم ذلك'});
+      return;
+    }
+
+    await actuallyCreatePerson(name, presetRole, targetFieldId);
+  }, {saveLabel: '💾 حفظ وارجع'});
+}
+
+async function actuallyCreatePerson(name, presetRole, targetFieldId) {
+  try {
     const person = {
       name, aliases: [], roles: [presetRole],
-      area: document.getElementById('qp_area').value || null,
-      phone: document.getElementById('qp_phone').value.trim() || null,
+      area: document.getElementById('qp_area')?.value || null,
+      phone: document.getElementById('qp_phone')?.value?.trim() || null,
       relationship_to_child: null,
-      notes: document.getElementById('qp_notes').value.trim() || '',
+      notes: document.getElementById('qp_notes')?.value?.trim() || '',
       active: true,
       created_at: Date.now(), updated_at: Date.now()
     };
     if (presetRole === 'pt') {
-      person.collector = document.getElementById('qp_collector').value;
+      person.collector = document.getElementById('qp_collector')?.value || 'nashwa';
     }
     const pid = 'p_' + uid();
     await ref(`people/${pid}`).set(person);
@@ -804,25 +908,59 @@ function quickAddPerson(presetRole, targetFieldId) {
       revertable: true, revert_action: 'delete_person', revert_target: pid
     });
     allPeople[pid] = person;
-    // Refresh the target field with new option
-    refreshPersonSelectInline(targetFieldId, presetRole, pid);
     toast(`✓ تم إضافة ${name}`, 'success');
-    closeModal();  // closes only the top (this quickAdd) modal
-  }, {saveLabel: '💾 حفظ وارجع'});
+    closeToParentModal();  // closes all sub-modals back to parent kafala
+    setTimeout(() => refreshPersonSelectInline(targetFieldId, presetRole, pid), 50);
+  } catch(e) {
+    console.error('Failed to create person:', e);
+    toast('فشل الإنشاء: ' + e.message, 'error');
+  }
 }
 
+// Close modals back down to the parent level
+function closeToParentModal() {
+  const parentCount = window._parentModalCount || 0;
+  let current = document.querySelectorAll('.modal-bg').length;
+  while (current > parentCount) {
+    const modals = Array.from(document.querySelectorAll('.modal-bg'));
+    const top = modals[modals.length - 1];
+    const id = top.id;
+    top.remove();
+    delete window['_modalSave_' + id];
+    current--;
+  }
+  const remaining = document.querySelectorAll('.modal-bg');
+  window._topModalId = remaining.length ? remaining[remaining.length-1].id : null;
+}
+
+function useExistingPerson(pid, targetFieldId, presetRole) {
+  const p = allPeople[pid];
+  if (p && !(p.roles||[]).includes(presetRole)) {
+    const newRoles = [...(p.roles||[]), presetRole];
+    ref(`people/${pid}`).update({roles: newRoles, updated_at: Date.now()});
+    allPeople[pid].roles = newRoles;
+    auditLog('add_role_to_person', `people/${pid}`, {roles: p.roles}, {roles: newRoles}, {
+      revertable: true, revert_action: 'restore_person', revert_target: pid
+    });
+  }
+  closeToParentModal();  // close dup warning + quickAdd, keep parent
+  setTimeout(() => refreshPersonSelectInline(targetFieldId, presetRole, pid), 50);
+  toast(`✓ تم استخدام ${allPeople[pid].name}`, 'success');
+}
+
+// Refresh the picker to show new person as selected
 function refreshPersonSelectInline(selectId, role, selectValue) {
-  const sel = document.getElementById(selectId);
-  if (!sel) return;
-  let people = Object.entries(allPeople).map(([pid,p])=>({pid,...p}));
-  if (role) people = people.filter(p => (p.roles||[]).includes(role));
-  people.sort((a,b) => a.name.localeCompare(b.name));
-  sel.innerHTML = '<option value="">— اختر —</option>' +
-    people.map(p => `<option value="${p.pid}" ${selectValue===p.pid?'selected':''}>${p.name}</option>`).join('');
-  sel.value = selectValue;
+  const hidden = document.getElementById(selectId);
+  const search = document.getElementById(selectId + '_search');
+  if (!hidden || !search) return;
+  if (selectValue && allPeople[selectValue]) {
+    hidden.value = selectValue;
+    search.value = allPeople[selectValue].name;
+  }
 }
 
 async function saveNewKafala() {
+  try {
   const child = document.getElementById('nk_child').value.trim();
   const guardian_id = document.getElementById('nk_guardian').value;
   const area = document.getElementById('nk_area').value;
@@ -831,9 +969,14 @@ async function saveNewKafala() {
   const src = document.getElementById('nk_src').value;
   const amount = parseInt(document.getElementById('nk_amount').value);
 
-  if (!child) return toast('اسم الطفل مطلوب', 'error');
-  if (!guardian_id) return toast('ولي الأمر مطلوب', 'error');
-  if (!amount || amount <= 0) return toast('المبلغ غير صحيح', 'error');
+  // Field-level highlights + specific errors
+  const errs = [];
+  if (!child) { errs.push('اسم الطفل'); document.getElementById('nk_child').style.borderColor = '#a63d2a'; }
+  if (!guardian_id) { errs.push('ولي الأمر'); const s = document.getElementById('nk_guardian_search'); if (s) s.style.borderColor = '#a63d2a'; }
+  if (!amount || amount <= 0) { errs.push('المبلغ'); document.getElementById('nk_amount').style.borderColor = '#a63d2a'; }
+  if (errs.length) {
+    return toast('⚠️ الحقول المطلوبة مفقودة: ' + errs.join(', '), 'error');
+  }
 
   const funding = {
     fid: 'f_' + uid(),
@@ -845,12 +988,15 @@ async function saveNewKafala() {
 
   if (src === 'kafeel') {
     const kafeel_id = document.getElementById('nk_kafeel').value;
-    if (!kafeel_id) return toast('الكفيل مطلوب', 'error');
+    if (!kafeel_id) {
+      const s = document.getElementById('nk_kafeel_search');
+      if (s) s.style.borderColor = '#a63d2a';
+      return toast('⚠️ اختر الكفيل', 'error');
+    }
     funding.kafeel_id = kafeel_id;
 
-    // Collector choice (who collects from this kafeel)
     const collectorChoice = document.querySelector('input[name="nk_collector_type"]:checked');
-    if (!collectorChoice) return toast('اختر من يحصّل من هذا الكفيل', 'error');
+    if (!collectorChoice) return toast('⚠️ اختر لمين يدفع الكفيل (PT محدد / نشوى / يوسف)', 'error');
 
     const choice = collectorChoice.value;
     if (choice === 'pt_specific') {
@@ -910,8 +1056,13 @@ async function saveNewKafala() {
     revert_target: kid
   });
   toast('✓ الكفالة تمت و ظاهرة في التحصيل', 'success');
-  closeAllModals();  // close all stacked modals
+  closeAllModals();
   await load();
+  } catch(err) {
+    console.error('saveNewKafala error:', err);
+    toast('❌ خطأ: ' + err.message, 'error');
+    alert('خطأ تقني: ' + err.message + '\n\nراجع Console للتفاصيل.');
+  }
 }
 
 // Helper: ensure a person has 'pt' role and set their collector
