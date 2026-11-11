@@ -199,6 +199,7 @@
             <th>ولي الأمر / الأم</th>
             <th>نوع الحالة</th>
             <th>الأساسي الثابت</th>
+            <th>نصيب الطفل</th>
             <th>زكاة (جنيه)</th>
           </tr></thead>
           <tbody id="zakatDist"></tbody>
@@ -616,7 +617,12 @@ function renderStep4() {
 
   // Build guardian list with filtering based on included case types
   const included = new Set(state.zakat_included_types || []);
-  const allGuardians = Object.entries(needyGuardians).map(([gid, info]) => ({gid, ...info}));
+  const allGuardians = Object.entries(needyGuardians).map(([gid, info]) => ({
+    gid,
+    ...info,
+    // Per-child average — this is the true measure of need
+    perChild: info.childCount > 0 ? Math.round(info.total / info.childCount) : info.total
+  }));
   const eligible = allGuardians.filter(g => [...g.caseTypes].some(t => included.has(t)));
 
   // Render type chips with live counts
@@ -653,15 +659,15 @@ function renderStep4() {
     <div class="stat"><div class="label">المستحقون</div><div class="value">${recipients}</div><div class="sub">من ${eligible.length} مؤهل</div></div>
   </div>`;
 
-  // Sort: orphans_first → orphans by ascending base, then non-orphans by ascending base
-  //       ascending → everyone by ascending base regardless of type
+  // Sort: ascending by PER-CHILD amount (= true neediness: mother w/ 1000 ÷ 4 kids = 250
+  // is more needy than mother w/ 500 ÷ 1 kid = 500, because each child gets less)
   let ordered;
   const guardianIsOrphan = (g) => g.caseTypes.has('كفالة_يتيم');
   if (state.zakat_priority === 'ascending') {
-    ordered = eligible.slice().sort((a,b) => a.total - b.total);
+    ordered = eligible.slice().sort((a,b) => a.perChild - b.perChild);
   } else {
-    const orphans = eligible.filter(g => guardianIsOrphan(g)).sort((a,b) => a.total - b.total);
-    const others  = eligible.filter(g => !guardianIsOrphan(g)).sort((a,b) => a.total - b.total);
+    const orphans = eligible.filter(g => guardianIsOrphan(g)).sort((a,b) => a.perChild - b.perChild);
+    const others  = eligible.filter(g => !guardianIsOrphan(g)).sort((a,b) => a.perChild - b.perChild);
     ordered = [...orphans, ...others];
   }
 
@@ -682,7 +688,8 @@ function renderStep4() {
       <td><span class="badge">${areaDisplay(g.area)}</span></td>
       <td>${name}${kidsBadge}</td>
       <td>${types}</td>
-      <td class="font-mono"><b>${fmt(g.total)}</b></td>
+      <td class="font-mono">${fmt(g.total)}<div class="text-xs text-muted">${g.childCount} طفل</div></td>
+      <td class="font-mono"><b style="color:var(--accent)">${fmt(g.perChild)}</b><div class="text-xs text-muted">لكل طفل</div></td>
       <td><input type="number" value="${amt}" data-gid="${g.gid}" oninput="updateZakat(this)" style="width:100px;text-align:center"></td>
     </tr>`;
   }).join('');
@@ -714,20 +721,23 @@ function distributeAuto() {
   const {needyGuardians} = computeAreaTotals();
   state.zakat_share = parseFloat(document.getElementById('zakat_share').value) || 300;
 
-  // Filter by included case types
+  // Filter by included case types; compute perChild for ranking
   const included = new Set(state.zakat_included_types || []);
   const eligible = Object.entries(needyGuardians)
-    .map(([gid, info]) => ({gid, ...info}))
+    .map(([gid, info]) => ({
+      gid, ...info,
+      perChild: info.childCount > 0 ? Math.round(info.total / info.childCount) : info.total
+    }))
     .filter(g => [...g.caseTypes].some(t => included.has(t)));
 
-  // Priority-based ordering
+  // Priority-based ordering — sort by PER-CHILD amount (true neediness)
   const guardianIsOrphan = (g) => g.caseTypes.has('كفالة_يتيم');
   let ordered;
   if (state.zakat_priority === 'ascending') {
-    ordered = eligible.slice().sort((a,b) => a.total - b.total);
+    ordered = eligible.slice().sort((a,b) => a.perChild - b.perChild);
   } else {
-    const orphans = eligible.filter(g => guardianIsOrphan(g)).sort((a,b) => a.total - b.total);
-    const others  = eligible.filter(g => !guardianIsOrphan(g)).sort((a,b) => a.total - b.total);
+    const orphans = eligible.filter(g => guardianIsOrphan(g)).sort((a,b) => a.perChild - b.perChild);
+    const others  = eligible.filter(g => !guardianIsOrphan(g)).sort((a,b) => a.perChild - b.perChild);
     ordered = [...orphans, ...others];
   }
 
