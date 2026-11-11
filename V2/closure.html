@@ -158,11 +158,34 @@
   <!-- STEP 4 -->
   <div class="step-panel" id="step4">
     <div class="card">
-      <h3 style="margin-top:0">توزيع الزكاة على الأمهات</h3>
+      <h3 style="margin-top:0">توزيع الزكاة على أولياء الأمور</h3>
       <div id="zakatStats"></div>
-      <div class="toolbar mt">
+
+      <!-- Filters row -->
+      <div style="margin:14px 0;padding:14px;background:var(--cream);border-radius:var(--r-sm)">
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px;font-weight:600">
+          📋 أنواع الحالات المشمولة في التوزيع (اضغط للتفعيل/الإلغاء):
+        </div>
+        <div id="zakatTypeChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+
+        <div style="margin-top:12px;font-size:12.5px;color:var(--muted);font-weight:600">
+          🎯 أولوية التوزيع:
+        </div>
+        <div style="display:flex;gap:16px;margin-top:6px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+            <input type="radio" name="zpri" value="orphans_first" onchange="setZakatPriority(this.value)">
+            <span>الأمهات/الأيتام أولاً — الباقي للأنواع التانية</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+            <input type="radio" name="zpri" value="ascending" onchange="setZakatPriority(this.value)">
+            <span>الأقل كفالة أولاً (بغض النظر عن النوع)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="toolbar">
         <div>
-          <label>حصة الأم (جنيه)</label>
+          <label>حصة الفرد (جنيه)</label>
           <input type="number" id="zakat_share" value="300" style="width:120px" onchange="distributeAuto()">
         </div>
         <button class="btn-small" onclick="distributeAuto()">⚡ توزيع تلقائي</button>
@@ -173,8 +196,9 @@
         <table>
           <thead><tr>
             <th>المنطقة</th>
-            <th>الأم / ولي الأمر</th>
-            <th>الكفالة الأساسية</th>
+            <th>ولي الأمر / الأم</th>
+            <th>نوع الحالة</th>
+            <th>الأساسي الثابت</th>
             <th>زكاة (جنيه)</th>
           </tr></thead>
           <tbody id="zakatDist"></tbody>
@@ -250,7 +274,10 @@ let state = {
   zakat_share: 300,
   zakat_distribution: {},
   youssef_by_area: {'الصف':0, 'كفر_علو':0, 'المعصرة':0, 'أماكن_أخرى':0},
-  include_fee: true
+  include_fee: true,
+  // Zakat filter & priority — persisted per month
+  zakat_included_types: ['كفالة_يتيم'],  // default: only orphans (mothers)
+  zakat_priority: 'orphans_first'  // 'orphans_first' | 'ascending'
 };
 
 function changeMonth(ym) {
@@ -391,10 +418,11 @@ function computeAreaTotals() {
       // Sum FIXED base across ALL children of this mother/guardian
       // (ignore prepaid status — zakat ranking is based on structural need, not this month's cash)
       const trueBase = kafalaBaseAmount(k);
-      if (!needyGuardians[gid]) needyGuardians[gid] = {area, total: 0, dueThisMonth: 0, childCount: 0};
+      if (!needyGuardians[gid]) needyGuardians[gid] = {area, total: 0, dueThisMonth: 0, childCount: 0, caseTypes: new Set()};
       needyGuardians[gid].total += trueBase;
       needyGuardians[gid].dueThisMonth += monthBase;
       needyGuardians[gid].childCount += 1;
+      if (k.case_type) needyGuardians[gid].caseTypes.add(k.case_type);
     }
   });
 
@@ -568,57 +596,157 @@ function renderStep3() {
   `;
 }
 
+// All case types available for zakat (excludes خبز which is collective bread, not personal zakat)
+const ZAKAT_CASE_TYPES = [
+  {key: 'كفالة_يتيم',  label: 'كفالة يتيم',  isOrphan: true},
+  {key: 'طالب_علم',    label: 'طالب علم',    isOrphan: false},
+  {key: 'حالات_خاصة',  label: 'حالات خاصة',  isOrphan: false},
+  {key: 'حالات_مرضية', label: 'حالات مرضية', isOrphan: false},
+  {key: 'قائمين_عليها',label: 'قائمين عليها',isOrphan: false},
+  {key: 'أرملة',       label: 'أرملة',       isOrphan: false}
+];
+
+function caseTypeLabel(k) {
+  const t = ZAKAT_CASE_TYPES.find(x => x.key === k);
+  return t ? t.label : (k||'').replace(/_/g,' ');
+}
+
 function renderStep4() {
   const {needyGuardians} = computeAreaTotals();
+
+  // Build guardian list with filtering based on included case types
+  const included = new Set(state.zakat_included_types || []);
+  const allGuardians = Object.entries(needyGuardians).map(([gid, info]) => ({gid, ...info}));
+  const eligible = allGuardians.filter(g => [...g.caseTypes].some(t => included.has(t)));
+
+  // Render type chips with live counts
+  const typeCounts = {};
+  allGuardians.forEach(g => g.caseTypes.forEach(t => { typeCounts[t] = (typeCounts[t]||0) + 1; }));
+  document.getElementById('zakatTypeChips').innerHTML = ZAKAT_CASE_TYPES.map(t => {
+    const n = typeCounts[t.key] || 0;
+    const active = included.has(t.key);
+    return `<button onclick="toggleZakatType('${t.key}')" style="
+      padding: 6px 12px; border-radius: 16px; font-size: 12px; cursor: pointer;
+      border: 1px solid ${active ? 'var(--accent)' : 'var(--border)'};
+      background: ${active ? 'var(--accent)' : '#fff'};
+      color: ${active ? '#fff' : (n===0 ? 'var(--muted-light)' : 'var(--ink)')};
+      opacity: ${n===0 ? 0.5 : 1};
+      font-weight: ${active ? 700 : 500};
+    ">
+      ${active ? '✓ ' : ''}${t.label}
+      <span style="margin-right:6px;background:rgba(255,255,255,0.3);padding:1px 6px;border-radius:8px;font-size:10px">${n}</span>
+    </button>`;
+  }).join('');
+
+  // Set the radio state
+  const priEl = document.querySelector(`input[name="zpri"][value="${state.zakat_priority||'orphans_first'}"]`);
+  if (priEl) priEl.checked = true;
+
+  // Distribution stats
   const distributed = Object.values(state.zakat_distribution||{}).reduce((a,b)=>a+b,0);
+  const recipients = Object.keys(state.zakat_distribution||{}).length;
 
   document.getElementById('zakatStats').innerHTML = `<div class="stats">
     <div class="stat"><div class="label">المتاح للتوزيع</div><div class="value">${fmt(state.zakat_remaining||0)}</div></div>
     <div class="stat stat-accent"><div class="label">الموزع</div><div class="value">${fmt(distributed)}</div></div>
     <div class="stat"><div class="label">المتبقي</div><div class="value">${fmt((state.zakat_remaining||0) - distributed)}</div></div>
-    <div class="stat"><div class="label">عدد الأمهات</div><div class="value">${Object.keys(state.zakat_distribution||{}).length}</div></div>
+    <div class="stat"><div class="label">المستحقون</div><div class="value">${recipients}</div><div class="sub">من ${eligible.length} مؤهل</div></div>
   </div>`;
 
-  // Ascending by TRUE fixed base — neediest (lowest base) first; excludes خبز cases
-  const guardians = Object.entries(needyGuardians).map(([gid, info]) => ({gid, ...info}))
-    .sort((a,b) => a.total - b.total);
+  // Sort: orphans_first → orphans by ascending base, then non-orphans by ascending base
+  //       ascending → everyone by ascending base regardless of type
+  let ordered;
+  const guardianIsOrphan = (g) => g.caseTypes.has('كفالة_يتيم');
+  if (state.zakat_priority === 'ascending') {
+    ordered = eligible.slice().sort((a,b) => a.total - b.total);
+  } else {
+    const orphans = eligible.filter(g => guardianIsOrphan(g)).sort((a,b) => a.total - b.total);
+    const others  = eligible.filter(g => !guardianIsOrphan(g)).sort((a,b) => a.total - b.total);
+    ordered = [...orphans, ...others];
+  }
 
   const dist = state.zakat_distribution || {};
-  document.getElementById('zakatDist').innerHTML = guardians.map(g => {
+  document.getElementById('zakatDist').innerHTML = ordered.map(g => {
     const p = allPeople[g.gid];
     const name = p ? p.name : '—';
     const amt = dist[g.gid] || 0;
+    const types = [...g.caseTypes].map(t => {
+      const def = ZAKAT_CASE_TYPES.find(x => x.key === t);
+      const isOrphan = def?.isOrphan;
+      return `<span class="badge" style="background:${isOrphan?'var(--accent-ultra-light)':'var(--cream-deep)'};color:${isOrphan?'var(--accent)':'var(--ink)'}">${caseTypeLabel(t)}</span>`;
+    }).join(' ');
     const kidsBadge = g.childCount > 1
-      ? `<span class="badge" style="margin-right:6px;background:var(--accent-ultra-light);color:var(--accent)">${g.childCount} أطفال</span>`
+      ? `<span class="badge" style="margin-right:6px;background:var(--gold-light,#fdf7e3);color:var(--gold,#6d4e00)">${g.childCount} أطفال</span>`
       : '';
     return `<tr>
       <td><span class="badge">${areaDisplay(g.area)}</span></td>
       <td>${name}${kidsBadge}</td>
+      <td>${types}</td>
       <td class="font-mono"><b>${fmt(g.total)}</b></td>
       <td><input type="number" value="${amt}" data-gid="${g.gid}" oninput="updateZakat(this)" style="width:100px;text-align:center"></td>
     </tr>`;
   }).join('');
 }
 
+function toggleZakatType(key) {
+  const set = new Set(state.zakat_included_types || []);
+  if (set.has(key)) set.delete(key);
+  else set.add(key);
+  state.zakat_included_types = [...set];
+  // Remove any guardians from distribution who no longer have any included type
+  const {needyGuardians} = computeAreaTotals();
+  Object.keys(state.zakat_distribution||{}).forEach(gid => {
+    const g = needyGuardians[gid];
+    if (!g || ![...g.caseTypes].some(t => set.has(t))) {
+      delete state.zakat_distribution[gid];
+    }
+  });
+  renderStep4();
+  recalc();
+}
+
+function setZakatPriority(v) {
+  state.zakat_priority = v;
+  renderStep4();
+}
+
 function distributeAuto() {
   const {needyGuardians} = computeAreaTotals();
   state.zakat_share = parseFloat(document.getElementById('zakat_share').value) || 300;
-  const guardians = Object.entries(needyGuardians).map(([gid, info]) => ({gid, ...info}))
-    .sort((a,b) => a.total - b.total);
+
+  // Filter by included case types
+  const included = new Set(state.zakat_included_types || []);
+  const eligible = Object.entries(needyGuardians)
+    .map(([gid, info]) => ({gid, ...info}))
+    .filter(g => [...g.caseTypes].some(t => included.has(t)));
+
+  // Priority-based ordering
+  const guardianIsOrphan = (g) => g.caseTypes.has('كفالة_يتيم');
+  let ordered;
+  if (state.zakat_priority === 'ascending') {
+    ordered = eligible.slice().sort((a,b) => a.total - b.total);
+  } else {
+    const orphans = eligible.filter(g => guardianIsOrphan(g)).sort((a,b) => a.total - b.total);
+    const others  = eligible.filter(g => !guardianIsOrphan(g)).sort((a,b) => a.total - b.total);
+    ordered = [...orphans, ...others];
+  }
 
   state.zakat_distribution = {};
   let remaining = state.zakat_remaining || 0;
-  for (const g of guardians) {
+  for (const g of ordered) {
     if (remaining < state.zakat_share) break;
     state.zakat_distribution[g.gid] = state.zakat_share;
     remaining -= state.zakat_share;
   }
-  if (remaining > 0 && guardians.length) {
-    state.zakat_distribution[guardians[0].gid] = (state.zakat_distribution[guardians[0].gid]||0) + remaining;
+  // Any leftover < one share → add to the neediest recipient
+  if (remaining > 0 && ordered.length) {
+    const first = ordered.find(g => state.zakat_distribution[g.gid]);
+    if (first) state.zakat_distribution[first.gid] = (state.zakat_distribution[first.gid]||0) + remaining;
   }
   renderStep4();
   recalc();
-  toast(`✓ وُزّعت على ${Object.keys(state.zakat_distribution).length} أم`, 'success');
+  const n = Object.keys(state.zakat_distribution).length;
+  toast(`✓ وُزّعت على ${n} مستحق${state.zakat_priority==='orphans_first'?' (الأيتام أولاً)':''}`, 'success');
 }
 
 function clearZakat() {
