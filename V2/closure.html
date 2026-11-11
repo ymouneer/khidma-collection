@@ -457,21 +457,22 @@ function fundingNeedsPaymentThisMonth(f, ym) {
 }
 
 function kafalaMonthlyBase(kafala, ym) {
-  // Only funding sources that need payment this month
+  // Disbursement view: include ALL funding amounts regardless of prepaid status by sponsor.
+  // Prepaid matters only for collection (what to collect THIS month from sponsors) —
+  // reports, closure, and area totals all show the monthly amount actually disbursed.
   if (kafala.status !== 'active') return 0;
-  return (kafala.funding || []).reduce((s, f) => {
-    return s + (fundingNeedsPaymentThisMonth(f, ym) ? (f.amount||0) : 0);
-  }, 0);
+  return (kafala.funding || []).reduce((s, f) => s + (f.amount || 0), 0);
 }
 
 function sadaqatPoolOutput(ym) {
-  // Sum of amounts from all funding sources where source=sadaqat and not prepaid
+  // Disbursement: sum ALL sadaqat-funded amounts. Prepaid status only matters for
+  // collection (where to get the money from this month), not for disbursement.
   const effective = effectiveKafalat();
   let total = 0;
   Object.values(effective).forEach(k => {
     if (k.status !== 'active') return;
     (k.funding || []).forEach(f => {
-      if (f.source === 'sadaqat' && fundingNeedsPaymentThisMonth(f, ym)) {
+      if (f.source === 'sadaqat') {
         total += f.amount || 0;
       }
     });
@@ -949,9 +950,9 @@ function updateYous(input) {
 const SADAQAT_PASSTHROUGH_AMAKEN = 4000; // يوسف kafala in أماكن أخرى funded from sadaqat, physically transferred by Youssef
 
 function computeYoussefCollection(ym) {
-  // Sum all funding where the PT's collector is 'youssef', excluding prepaid, for this month.
+  // Disbursement total for Youssef's PTs (all his sponsors' kafalat, regardless of
+  // prepaid status by sponsor). Prepaid only affects collection view, not closure.
   const effective = effectiveKafalat();
-  // Build set of Youssef PT person_ids
   const youssefPtIds = new Set(
     Object.entries(allPeople)
       .filter(([_, p]) => p.collector === 'youssef' && (p.roles || []).includes('pt'))
@@ -962,7 +963,6 @@ function computeYoussefCollection(ym) {
   Object.values(effective).forEach(k => {
     if (k.status !== 'active') return;
     (k.funding || []).forEach(f => {
-      if (!fundingNeedsPaymentThisMonth(f, ym)) return;
       if (f.pt_id && youssefPtIds.has(f.pt_id)) {
         total += f.amount || 0;
       }
@@ -1150,7 +1150,8 @@ function filterReportByName(query) {
   });
 }
 
-// Compute display totals per area (respects effective kafalat + draft zakat distribution)
+// Compute DISBURSEMENT totals per area — matches what the report table shows.
+// Includes ALL active kafalat funding regardless of prepaid status by the sponsor.
 function reportsByArea() {
   const effective = effectiveKafalat();
   const byArea = {};
@@ -1159,8 +1160,8 @@ function reportsByArea() {
     if (k.status !== 'active') return;
     const area = k.area;
     if (!byArea[area]) byArea[area] = {base: 0, zakat: 0, total: 0};
+    // Disbursement: include ALL funding regardless of whether the sponsor prepaid
     (k.funding||[]).forEach(f => {
-      if (!fundingNeedsPaymentThisMonth(f, CURRENT_MONTH)) return;
       byArea[area].base += f.amount || 0;
     });
   });
@@ -1355,9 +1356,8 @@ function renderStep8() {
     excl.forEach(gid => {
       const kafala = Object.values(effective).find(k => k.guardian_id === gid && k.area === a);
       if (!kafala) return;
-      (kafala.funding||[]).forEach(f => {
-        if (fundingNeedsPaymentThisMonth(f, CURRENT_MONTH)) adj[a] -= f.amount || 0;
-      });
+      // Disbursement: subtract ALL funding amounts of excluded guardian (not prepaid-filtered)
+      (kafala.funding||[]).forEach(f => { adj[a] -= f.amount || 0; });
       const z = (state.zakat_distribution||{})[gid] || 0;
       adj[a] -= z;
     });

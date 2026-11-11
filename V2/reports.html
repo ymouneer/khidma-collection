@@ -296,12 +296,11 @@ function render() {
   renderTiles();
 }
 
-// Compute totals for a given month — using snapshot if closed, live kafalat for draft/empty (filtered to current state)
+// Compute DISBURSEMENT totals per area — matches what the report table shows.
+// Always computed fresh from kafalat (ignores old stored `totals.by_area` which used
+// a different "net of prepaid" logic at close time).
 function monthTotalsByArea(ym) {
   const data = allMonthsData[ym] || {};
-  // If already stored
-  if (data.totals && data.totals.by_area) return data.totals.by_area;
-
   const state = data.closure_state || {};
   const dist = state.zakat_distribution || {};
   const src = data.snapshot?.kafalat || liveKafalat;
@@ -311,8 +310,8 @@ function monthTotalsByArea(ym) {
     if (k.status !== 'active') return;
     const a = k.area;
     if (!byArea[a]) byArea[a] = {base: 0, zakat: 0, total: 0};
+    // Disbursement: include ALL funding regardless of prepaid status by sponsor
     (k.funding||[]).forEach(f => {
-      if (f.prepaid_through && f.prepaid_through >= ym) return;
       byArea[a].base += f.amount || 0;
     });
   });
@@ -570,10 +569,8 @@ function renderNashwaMsg() {
     getExcluded(ym, a).forEach(gid => {
       const kafala = Object.values(snapshot).find(k => k.guardian_id === gid && k.area === a);
       if (!kafala) return;
-      (kafala.funding||[]).forEach(f => {
-        if (f.prepaid_through && f.prepaid_through >= ym) return;
-        adj[a] -= f.amount || 0;
-      });
+      // Disbursement: subtract ALL funding of excluded guardian (no prepaid filter)
+      (kafala.funding||[]).forEach(f => { adj[a] -= f.amount || 0; });
       const z = (state.zakat_distribution||{})[gid] || 0;
       adj[a] -= z;
     });
@@ -653,10 +650,8 @@ function renderSheikhMsgs() {
     getExcluded(ym, a).forEach(gid => {
       const kafala = Object.values(snapshot).find(k => k.guardian_id === gid && k.area === a);
       if (!kafala) return;
-      (kafala.funding||[]).forEach(f => {
-        if (f.prepaid_through && f.prepaid_through >= ym) return;
-        total -= f.amount || 0;
-      });
+      // Disbursement: subtract ALL funding amounts (no prepaid filter)
+      (kafala.funding||[]).forEach(f => { total -= f.amount || 0; });
     });
     if (!total) return;
     const msg = `*السلام عليكم ورحمة الله*
