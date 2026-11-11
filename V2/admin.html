@@ -202,6 +202,7 @@
           <option value="nashwa">👩 نشوى</option>
         </select>
         <div class="spacer"></div>
+        <button class="btn-ghost" onclick="clearAllFilters()" title="مسح كل الفلاتر">🗑️ مسح الفلاتر</button>
         <button class="btn-gold" onclick="exportFiltered()">📥 تصدير CSV</button>
         <button onclick="openNewKafala()">+ حالة جديدة</button>
         <span class="info" id="countInfo">—</span>
@@ -210,9 +211,11 @@
       <div class="filter-chips" id="chipFilters">
         <div class="chip active" data-case="">الكل</div>
         <div class="chip" data-case="كفالة_يتيم">كفالة يتيم</div>
-        <div class="chip" data-case="كفالة_طالب">كفالة طالب</div>
-        <div class="chip" data-case="أرملة">أرملة</div>
+        <div class="chip" data-case="طالب_علم">طالب علم</div>
         <div class="chip" data-case="حالات_خاصة">حالات خاصة</div>
+        <div class="chip" data-case="حالات_مرضية">حالات مرضية</div>
+        <div class="chip" data-case="قائمين_عليها">قائمين عليها</div>
+        <div class="chip" data-case="أرملة">أرملة</div>
         <div class="chip" data-case="خبز">خبز</div>
       </div>
 
@@ -299,8 +302,24 @@ async function load() {
   const eVal = eSnap.val() || {};
   pendingEdits = Object.entries(eVal).map(([id, e]) => ({id, ...e}));
 
-  // Setup chip filters
+  // Setup chip filters — attach handler + append live count per type
+  const caseCounts = {};
+  Object.values(allKafalat).forEach(k => {
+    const t = k.case_type || '(بدون)';
+    caseCounts[t] = (caseCounts[t]||0) + 1;
+  });
   document.querySelectorAll('#chipFilters .chip').forEach(c => {
+    const ct = c.dataset.case;
+    const count = ct === '' ? Object.keys(allKafalat).length : (caseCounts[ct] || 0);
+    // Append count badge
+    const existing = c.querySelector('.cnt');
+    if (existing) existing.remove();
+    const badge = document.createElement('span');
+    badge.className = 'cnt';
+    badge.style.cssText = 'margin-right:6px;background:rgba(255,255,255,0.3);padding:1px 7px;border-radius:9px;font-size:10.5px;font-weight:700';
+    badge.textContent = count;
+    c.appendChild(badge);
+    if (count === 0 && ct !== '') c.style.opacity = '0.5';
     c.onclick = () => {
       document.querySelectorAll('#chipFilters .chip').forEach(x => x.classList.remove('active'));
       c.classList.add('active');
@@ -320,6 +339,36 @@ let lastFilteredItems = []; // cache for export
 
 // Pools of valid ids per role (populated once, reused by combo search)
 let FILTER_POOLS = { kafeel: [], pt: [], guardian: [] };
+
+function clearAllFilters() {
+  // Text search
+  document.getElementById('search').value = '';
+  // Native selects
+  ['filterArea','filterStatus','filterPrepaid','filterSponsorship','filterCollector'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  // Combo filters (kafeel/pt/guardian)
+  [
+    ['filterKafeel','👤 كل الكفلاء — اكتب للبحث...'],
+    ['filterPT','🧑‍💼 كل الـ PTs — اكتب للبحث...'],
+    ['filterGuardian','👨‍👩‍👧 كل أولياء الأمور — اكتب للبحث...']
+  ].forEach(([id, ph]) => {
+    const h = document.getElementById(id);
+    const s = document.getElementById(id + '_search');
+    const w = s ? s.closest('.sbox') : null;
+    if (h) h.value = '';
+    if (s) { s.value = ''; s.placeholder = ph; }
+    if (w) w.classList.remove('selected');
+  });
+  // Case chip → back to الكل
+  caseFilter = '';
+  document.querySelectorAll('#chipFilters .chip').forEach(x => x.classList.remove('active'));
+  const allChip = document.querySelector('#chipFilters .chip[data-case=""]');
+  if (allChip) allChip.classList.add('active');
+  render();
+  toast('✓ تم مسح كل الفلاتر', 'success');
+}
 
 function populateFilterDropdowns() {
   const kafeelIds = new Set();
@@ -966,9 +1015,11 @@ function openEditKafala(kid) {
       <div><label>نوع الحالة</label>
         <select id="f_case">
           <option value="كفالة_يتيم" ${k.case_type==='كفالة_يتيم'?'selected':''}>كفالة يتيم</option>
-          <option value="كفالة_طالب" ${k.case_type==='كفالة_طالب'?'selected':''}>كفالة طالب</option>
-          <option value="أرملة" ${k.case_type==='أرملة'?'selected':''}>أرملة</option>
+          <option value="طالب_علم" ${k.case_type==='طالب_علم'?'selected':''}>طالب علم</option>
           <option value="حالات_خاصة" ${k.case_type==='حالات_خاصة'?'selected':''}>حالات خاصة</option>
+          <option value="حالات_مرضية" ${k.case_type==='حالات_مرضية'?'selected':''}>حالات مرضية</option>
+          <option value="قائمين_عليها" ${k.case_type==='قائمين_عليها'?'selected':''}>قائمين عليها</option>
+          <option value="أرملة" ${k.case_type==='أرملة'?'selected':''}>أرملة</option>
           <option value="خبز" ${k.case_type==='خبز'?'selected':''}>خبز</option>
         </select>
       </div>
@@ -1177,9 +1228,11 @@ function openNewKafala() {
       <div><label>نوع الحالة *</label>
         <select id="nk_case">
           <option value="كفالة_يتيم">كفالة يتيم</option>
-          <option value="كفالة_طالب">كفالة طالب</option>
-          <option value="أرملة">أرملة</option>
+          <option value="طالب_علم">طالب علم</option>
           <option value="حالات_خاصة">حالات خاصة</option>
+          <option value="حالات_مرضية">حالات مرضية</option>
+          <option value="قائمين_عليها">قائمين عليها</option>
+          <option value="أرملة">أرملة</option>
           <option value="خبز">خبز</option>
         </select>
       </div>
