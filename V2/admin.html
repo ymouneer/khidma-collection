@@ -50,6 +50,65 @@
     content: '🔍'; position: absolute; right: 12px; top: 50%;
     transform: translateY(-50%); font-size: 13px; opacity: 0.4;
   }
+
+  /* Calendar inputs — make them clearly look like date pickers across all browsers */
+  input.dt, input[type="date"], input[type="month"] {
+    cursor: pointer !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%234a7c59' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2' ry='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: left 12px center !important;
+    background-size: 18px !important;
+    padding-left: 38px !important;
+    direction: ltr !important;
+    text-align: center !important;
+    font-family: inherit !important;
+  }
+  /* Hide native calendar icon in Chrome/Edge so only ours shows */
+  input.dt::-webkit-calendar-picker-indicator,
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="month"]::-webkit-calendar-picker-indicator {
+    opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    position: absolute; right: 0; top: 0;
+  }
+  input.dt:focus, input[type="date"]:focus, input[type="month"]:focus {
+    border-color: var(--accent) !important;
+  }
+
+  /* Searchable filter combobox */
+  .sbox { position: relative; min-width: 200px; }
+  .sbox input[type="text"] {
+    width: 100%; padding: 8px 32px 8px 12px;
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    font-size: 13px; background: #fff;
+  }
+  .sbox input[type="text"]:focus { border-color: var(--accent); outline: none; }
+  .sbox.selected input[type="text"] {
+    background: var(--accent-ultra-light);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .sbox-x {
+    position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    cursor: pointer; font-size: 18px; color: var(--muted);
+    display: none; width: 18px; height: 18px; line-height: 16px; text-align: center;
+    border-radius: 50%; background: rgba(0,0,0,0.05);
+  }
+  .sbox.selected .sbox-x { display: inline-block; }
+  .sbox-x:hover { background: #d9534f; color: #fff; }
+  .sbox-drop {
+    display: none; position: absolute; top: 100%; right: 0; left: 0;
+    background: #fff; border: 1px solid var(--border); border-radius: var(--r-sm);
+    max-height: 220px; overflow-y: auto; z-index: 100;
+    box-shadow: var(--shadow); margin-top: 2px;
+  }
+  .sbox-drop.open { display: block; }
+  .sbox-drop .sbox-item {
+    padding: 8px 12px; cursor: pointer; font-size: 13px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .sbox-drop .sbox-item:hover { background: var(--accent-ultra-light); }
+  .sbox-drop .sbox-item .sm { color: var(--muted); font-size: 11px; }
+  .sbox-drop .sbox-empty { padding: 10px; color: var(--muted); font-size: 12px; text-align: center; }
 </style>
 </head>
 <body>
@@ -111,15 +170,33 @@
           <option value="sadaqat_only">🤲 صدقات فقط</option>
           <option value="has_kafeel">👤 عنده كفيل</option>
         </select>
-        <select id="filterKafeel" onchange="render()">
-          <option value="">👤 كل الكفلاء</option>
-        </select>
-        <select id="filterPT" onchange="render()">
-          <option value="">🧑‍💼 كل الـ PTs</option>
-        </select>
-        <select id="filterGuardian" onchange="render()">
-          <option value="">👨‍👩‍👧 كل أولياء الأمور</option>
-        </select>
+        <div class="sbox" data-role="kafeel">
+          <input type="text" id="filterKafeel_search" placeholder="👤 كل الكفلاء — اكتب للبحث..." autocomplete="off"
+            oninput="filterComboSearch('filterKafeel','kafeel',this.value)"
+            onfocus="filterComboSearch('filterKafeel','kafeel',this.value)"
+            onblur="setTimeout(()=>filterComboBlur('filterKafeel'),150)">
+          <input type="hidden" id="filterKafeel">
+          <span class="sbox-x" onclick="filterComboClear('filterKafeel','👤 كل الكفلاء')">×</span>
+          <div class="sbox-drop" id="filterKafeel_drop"></div>
+        </div>
+        <div class="sbox" data-role="pt">
+          <input type="text" id="filterPT_search" placeholder="🧑‍💼 كل الـ PTs — اكتب للبحث..." autocomplete="off"
+            oninput="filterComboSearch('filterPT','pt',this.value)"
+            onfocus="filterComboSearch('filterPT','pt',this.value)"
+            onblur="setTimeout(()=>filterComboBlur('filterPT'),150)">
+          <input type="hidden" id="filterPT">
+          <span class="sbox-x" onclick="filterComboClear('filterPT','🧑‍💼 كل الـ PTs')">×</span>
+          <div class="sbox-drop" id="filterPT_drop"></div>
+        </div>
+        <div class="sbox" data-role="guardian">
+          <input type="text" id="filterGuardian_search" placeholder="👨‍👩‍👧 كل أولياء الأمور — اكتب للبحث..." autocomplete="off"
+            oninput="filterComboSearch('filterGuardian','guardian',this.value)"
+            onfocus="filterComboSearch('filterGuardian','guardian',this.value)"
+            onblur="setTimeout(()=>filterComboBlur('filterGuardian'),150)">
+          <input type="hidden" id="filterGuardian">
+          <span class="sbox-x" onclick="filterComboClear('filterGuardian','👨‍👩‍👧 كل أولياء الأمور')">×</span>
+          <div class="sbox-drop" id="filterGuardian_drop"></div>
+        </div>
         <select id="filterCollector" onchange="render()">
           <option value="">💰 كل المحصلين</option>
           <option value="youssef">🧑‍💼 يوسف</option>
@@ -127,7 +204,7 @@
         </select>
         <div class="spacer"></div>
         <button class="btn-gold" onclick="exportFiltered()">📥 تصدير CSV</button>
-        <button onclick="openNewKafala()">+ كفالة جديدة</button>
+        <button onclick="openNewKafala()">+ حالة جديدة</button>
         <span class="info" id="countInfo">—</span>
       </div>
 
@@ -194,7 +271,7 @@
     <div class="card">
       <h3>⚡ الزيادات الوقتية للشهر الحالي</h3>
       <p class="text-muted text-sm">
-        التعديلات الدائمة (كفالة جديدة/إلغاء/تغيير مبلغ/تويد) تُطبَّق فوراً في Firebase و تظهر في التحصيل.
+        التعديلات الدائمة (حالة جديدة/إلغاء/تغيير مبلغ/تويد) تُطبَّق فوراً في Firebase و تظهر في التحصيل.
         <br>فقط <b>الزيادات الوقتية</b> (one-off) تدخل الطابور و تُطبّق في الإقفال فقط.
       </p>
       <div id="editsList"></div>
@@ -242,8 +319,10 @@ async function load() {
 
 let lastFilteredItems = []; // cache for export
 
+// Pools of valid ids per role (populated once, reused by combo search)
+let FILTER_POOLS = { kafeel: [], pt: [], guardian: [] };
+
 function populateFilterDropdowns() {
-  // Collect distinct kafeel/pt/guardian ids actually referenced by active kafalat
   const kafeelIds = new Set();
   const ptIds = new Set();
   const guardianIds = new Set();
@@ -254,29 +333,89 @@ function populateFilterDropdowns() {
       if (f.pt_id) ptIds.add(f.pt_id);
     });
   });
+  FILTER_POOLS.kafeel = [...kafeelIds];
+  FILTER_POOLS.pt = [...ptIds];
+  FILTER_POOLS.guardian = [...guardianIds];
+}
 
-  const toOpt = (id) => {
-    const p = allPeople[id];
-    if (!p) return '';
-    return `<option value="${id}">${p.name}</option>`;
-  };
-  const sortByName = (a, b) => {
+// Searchable combobox for toolbar filters
+function filterComboSearch(hiddenId, role, query) {
+  const drop = document.getElementById(hiddenId + '_drop');
+  const qn = normalizeName(query || '');
+  let ids = FILTER_POOLS[role] || [];
+
+  // If user is typing, filter; empty query → show first 30
+  let matches = ids.filter(id => {
+    const n = normalizeName((allPeople[id]||{}).name||'');
+    return qn ? n.includes(qn) : true;
+  });
+
+  matches.sort((a,b) => {
     const na = (allPeople[a]||{}).name||'';
     const nb = (allPeople[b]||{}).name||'';
     return na.localeCompare(nb, 'ar');
-  };
+  });
 
-  const kSel = document.getElementById('filterKafeel');
-  kSel.innerHTML = '<option value="">👤 كل الكفلاء</option>' +
-    [...kafeelIds].sort(sortByName).map(toOpt).join('');
+  if (!matches.length) {
+    drop.innerHTML = `<div class="sbox-empty">لا نتائج</div>`;
+  } else {
+    drop.innerHTML = matches.slice(0, 40).map(id => {
+      const p = allPeople[id] || {};
+      const count = countForRole(id, role);
+      return `<div class="sbox-item" onmousedown="filterComboPick('${hiddenId}','${id}')">
+        <b>${p.name||'(بدون اسم)'}</b>
+        <span class="sm"> — ${count} كفالة</span>
+      </div>`;
+    }).join('');
+  }
+  drop.classList.add('open');
+}
 
-  const pSel = document.getElementById('filterPT');
-  pSel.innerHTML = '<option value="">🧑‍💼 كل الـ PTs</option>' +
-    [...ptIds].sort(sortByName).map(toOpt).join('');
+function countForRole(id, role) {
+  if (role === 'guardian') {
+    return Object.values(allKafalat).filter(k => k.guardian_id === id).length;
+  }
+  return Object.values(allKafalat).filter(k =>
+    (k.funding||[]).some(f => (role === 'kafeel' ? f.kafeel_id === id : f.pt_id === id))
+  ).length;
+}
 
-  const gSel = document.getElementById('filterGuardian');
-  gSel.innerHTML = '<option value="">👨‍👩‍👧 كل أولياء الأمور</option>' +
-    [...guardianIds].sort(sortByName).map(toOpt).join('');
+function filterComboPick(hiddenId, id) {
+  const hidden = document.getElementById(hiddenId);
+  const search = document.getElementById(hiddenId + '_search');
+  const drop = document.getElementById(hiddenId + '_drop');
+  const wrap = search.closest('.sbox');
+
+  hidden.value = id;
+  search.value = (allPeople[id]||{}).name || '';
+  wrap.classList.add('selected');
+  drop.classList.remove('open');
+  render();
+}
+
+function filterComboClear(hiddenId, placeholder) {
+  const hidden = document.getElementById(hiddenId);
+  const search = document.getElementById(hiddenId + '_search');
+  const wrap = search.closest('.sbox');
+  hidden.value = '';
+  search.value = '';
+  search.placeholder = placeholder;
+  wrap.classList.remove('selected');
+  render();
+}
+
+function filterComboBlur(hiddenId) {
+  const drop = document.getElementById(hiddenId + '_drop');
+  const hidden = document.getElementById(hiddenId);
+  const search = document.getElementById(hiddenId + '_search');
+  drop.classList.remove('open');
+  // If user typed but didn't pick, and nothing is selected → clear text (keep placeholder)
+  if (!hidden.value) {
+    search.value = '';
+  } else {
+    // Restore name if they mis-typed
+    search.value = (allPeople[hidden.value]||{}).name || '';
+  }
 }
 
 function exportFiltered() {
@@ -580,7 +719,7 @@ function openAssignKafeel(kid) {
       </div>
     </div>
     <div class="form-row single" style="margin-top:10px">
-      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="ak_prepaid" type="month"></div>
+      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="ak_prepaid" type="month" class="dt" onclick="this.showPicker&&this.showPicker()"></div>
     </div>
   `, async () => {
     try {
@@ -850,7 +989,7 @@ function openEditKafala(kid) {
           <option value="f" ${k.child_gender==='f'?'selected':''}>أنثى</option>
         </select>
       </div>
-      <div><label>تاريخ الميلاد (اختياري)</label><input id="f_dob" type="date" value="${k.child_dob||''}"></div>
+      <div><label>تاريخ الميلاد (اختياري)</label><input id="f_dob" type="date" class="dt" onclick="this.showPicker&&this.showPicker()" value="${k.child_dob||''}"></div>
       <div><label>المرحلة التعليمية (اختياري)</label>
         <select id="f_school">
           ${schoolLevels.map(s => `<option value="${s}" ${k.school_level===s?'selected':''}>${s||'—'}</option>`).join('')}
@@ -1012,7 +1151,7 @@ function openNewKafala() {
     (p.name === 'نشوى صلاح' || p.name === 'نشوى') && (p.roles||[]).includes('pt')
   );
 
-  modal('➕ كفالة جديدة', `
+  modal('➕ حالة جديدة', `
     <div style="background:var(--cream-deep);padding:12px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;color:var(--muted)">
       💡 كل البيانات محفوظة أثناء العمل — إضافة ولي/كفيل جديد لن يُلغي ما أدخلته
     </div>
@@ -1045,13 +1184,13 @@ function openNewKafala() {
           <option value="خبز">خبز</option>
         </select>
       </div>
-      <div><label>تاريخ البدء</label><input id="nk_start" type="month" value="${getWorkingMonth()}"></div>
+      <div><label>تاريخ البدء</label><input id="nk_start" type="month" class="dt" onclick="this.showPicker&&this.showPicker()" value="${getWorkingMonth()}"></div>
     </div>
     <details style="margin:8px 0 14px">
       <summary style="cursor:pointer;color:var(--muted);font-size:12.5px">+ بيانات إضافية (اختيارية)</summary>
       <div class="form-row three mt-sm">
         <div><label>الجنس</label><select id="nk_gender"><option value="">—</option><option value="m">ذكر</option><option value="f">أنثى</option></select></div>
-        <div><label>تاريخ الميلاد</label><input id="nk_dob" type="date"></div>
+        <div><label>تاريخ الميلاد</label><input id="nk_dob" type="date" class="dt" onclick="this.showPicker&&this.showPicker()"></div>
         <div><label>المرحلة التعليمية</label><select id="nk_school">${schoolLevels.map(s=>`<option value="${s}">${s||'—'}</option>`).join('')}</select></div>
       </div>
       <div class="form-row single">
@@ -1118,7 +1257,7 @@ function openNewKafala() {
         </div>
       </div>
       <div class="form-row single mt-sm">
-        <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="nk_prepaid" type="month"></div>
+        <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="nk_prepaid" type="month" class="dt" onclick="this.showPicker&&this.showPicker()"></div>
       </div>
     </div>
 
@@ -1365,7 +1504,7 @@ async function saveNewKafala() {
   };
 
   const ok = await confirmImpact({
-    title: 'إضافة كفالة جديدة (تطبيق فوري)',
+    title: 'إضافة حالة جديدة (تطبيق فوري)',
     message: 'سيتم إنشاء الكفالة فوراً و تظهر في التحصيل.',
     impact: [
       `الطفل: <b>${child}</b>`,
@@ -1432,7 +1571,7 @@ function openAddFunding(kid) {
     </div>
     <div class="form-row">
       <div id="af_pt_wrap"><label>محصّل (PT)</label>${renderPersonSelect('af_pt', '', 'pt')}</div>
-      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="af_prepaid" type="month"></div>
+      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="af_prepaid" type="month" class="dt" onclick="this.showPicker&&this.showPicker()"></div>
     </div>
     <div class="form-row single"><div><label>ملاحظات</label><input id="af_notes"></div></div>
   `, () => saveAddFunding(kid));
@@ -1538,9 +1677,9 @@ function refreshEfForm(kid, fid) {
       <div><label>الكفيل الجديد</label>${renderPersonSelect('ef_newkafeel', f.kafeel_id, 'kafeel')}</div>
       <div><label>المحصّل (PT) الجديد</label>${renderPersonSelect('ef_newpt', f.pt_id, 'pt')}</div>
     </div>
-    <div class="form-row single"><div><label>تاريخ بدء التبديل</label><input id="ef_startym" type="month" value="${currentMonth()}"></div></div>`;
+    <div class="form-row single"><div><label>تاريخ بدء التبديل</label><input id="ef_startym" type="month" class="dt" onclick="this.showPicker&&this.showPicker()" value="${currentMonth()}"></div></div>`;
   } else if (type === 'prepay') {
-    el.innerHTML = `<div class="form-row single"><div><label>مدفوع حتى</label><input id="ef_val" type="month" value="${f.prepaid_through||''}"></div></div>`;
+    el.innerHTML = `<div class="form-row single"><div><label>مدفوع حتى</label><input id="ef_val" type="month" class="dt" onclick="this.showPicker&&this.showPicker()" value="${f.prepaid_through||''}"></div></div>`;
   } else if (type === 'cancel_to_pending') {
     el.innerHTML = `<div style="padding:14px;background:#fdf7e3;border:1px solid var(--warn);border-radius:8px;color:#6d4e00;font-size:13px">
       🕒 الكفالة ستتحول من <b>${personName(allPeople, f.kafeel_id)}</b> إلى <b>صدقات (في انتظار كفيل)</b>.<br>
