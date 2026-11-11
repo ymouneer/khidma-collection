@@ -57,7 +57,8 @@
 <div class="topbar no-print">
   <h1>📄 التقارير والرسائل</h1>
   <div class="right">
-    <a href="home.html">الرئيسية</a>
+    <a href="home.html">🏠 الرئيسية</a>
+    <span id="monthChipHolder"></span>
     <a href="admin.html" class="hide-mobile">إدارة</a>
     <a href="closure.html" class="hide-mobile">إقفال</a>
     <a onclick="createFullBackup()" class="btn-backup">💾 Backup</a>
@@ -68,9 +69,7 @@
 <div class="container">
 
   <div class="card card-tight flex gap no-print">
-    <label style="margin:0">الشهر:</label>
-    <input type="text" id="monthInput" value="2026-11" style="width:120px">
-    <button class="btn-small" onclick="loadMonth()">تحميل</button>
+    <div class="text-sm text-muted">💡 غيّر الشهر من الـ chip فوق</div>
     <div class="spacer"></div>
     <span class="text-sm" id="monthStatus"></span>
   </div>
@@ -86,10 +85,11 @@
 if (!checkAuth()) throw new Error('auth');
 initFirebase();
 
-let CURRENT_MONTH = '2026-11', monthData = null;
+let CURRENT_MONTH = getWorkingMonth(), monthData = null;
 
 async function loadMonth() {
-  CURRENT_MONTH = document.getElementById('monthInput').value;
+  CURRENT_MONTH = getWorkingMonth();
+  renderMonthChip('monthChipHolder', (ym) => { CURRENT_MONTH = ym; loadMonth(); });
   const snap = await ref(`months/${CURRENT_MONTH}`).once('value');
   monthData = snap.val();
   const st = document.getElementById('monthStatus');

@@ -284,6 +284,7 @@
   <h1>🌿 التحصيل</h1>
   <div class="right">
     <a href="home.html">🏠 الرئيسية</a>
+    <span id="monthChipHolder"></span>
     <a href="admin.html" class="hide-mobile">إدارة</a>
     <a href="closure.html" class="hide-mobile">إقفال</a>
     <span class="logout" onclick="logout()">خروج</span>
@@ -345,7 +346,7 @@
 initFirebase();
 
 let allKafalat = {}, allPeople = {}, state = {};
-let CURRENT_MONTH = '2026-11';
+let CURRENT_MONTH = getWorkingMonth();
 let saveTimer = null;
 let syncingFromCloud = false;
 let firebaseReady = false;
@@ -378,6 +379,8 @@ function setCloudStatus(type, msg) {
 async function load() {
   setCloudStatus('saving', '⏳ تحميل البيانات...');
   try {
+    CURRENT_MONTH = getWorkingMonth();
+    renderMonthChip('monthChipHolder', (ym) => { CURRENT_MONTH = ym; load(); });
     [allKafalat, allPeople] = await Promise.all([fetchKafalat(), fetchPeople()]);
     setupMonthSwitch();
     renderCollectorTabs();

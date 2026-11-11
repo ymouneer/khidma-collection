@@ -70,7 +70,8 @@
 <div class="topbar">
   <h1>📊 إقفال الشهر</h1>
   <div class="right">
-    <a href="home.html">الرئيسية</a>
+    <a href="home.html">🏠 الرئيسية</a>
+    <span id="monthChipHolder"></span>
     <a href="admin.html" class="hide-mobile">إدارة</a>
     <a href="reports.html" class="hide-mobile">تقارير</a>
     <a href="backups.html" class="hide-mobile">النسخ</a>
@@ -83,12 +84,11 @@
 
   <div class="card card-tight flex-between">
     <div>
-      <div class="text-xs text-muted">الشهر</div>
+      <div class="text-xs text-muted">الشهر النشط</div>
       <h2 style="margin:0;color:var(--accent)" id="monthLabel">—</h2>
     </div>
-    <div class="flex gap">
-      <label style="margin:0">تغيير:</label>
-      <input type="text" id="monthInput" value="2026-11" style="width:120px" onchange="changeMonth()">
+    <div class="flex gap text-sm text-muted">
+      <span>💡 غيّر الشهر من الـ chip فوق</span>
     </div>
   </div>
 
@@ -242,7 +242,7 @@
 if (!checkAuth()) throw new Error('auth');
 initFirebase();
 
-let CURRENT_MONTH = '2026-11';
+let CURRENT_MONTH = getWorkingMonth();
 let allKafalat = {}, allPeople = {}, config = {}, pendingEdits = [];
 let state = {
   nashwa_total: 0,
@@ -253,12 +253,14 @@ let state = {
   include_fee: true
 };
 
-function changeMonth() {
-  CURRENT_MONTH = document.getElementById('monthInput').value;
+function changeMonth(ym) {
+  CURRENT_MONTH = ym || getWorkingMonth();
   load();
 }
 
 async function load() {
+  CURRENT_MONTH = getWorkingMonth();
+  renderMonthChip('monthChipHolder', (ym) => changeMonth(ym));
   [allPeople, allKafalat, config] = await Promise.all([fetchPeople(), fetchKafalat(), fetchConfig()]);
   const eSnap = await ref(`months/${CURRENT_MONTH}/edits`).once('value');
   pendingEdits = Object.entries(eSnap.val() || {}).map(([id,e]) => ({id,...e}));

@@ -53,6 +53,160 @@ function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 
+// ============================================================
+// Smart Month Chip — shared across all pages
+// ============================================================
+function getWorkingMonth() {
+  const urlMonth = new URLSearchParams(location.search).get('month');
+  if (urlMonth && /^\d{4}-\d{2}$/.test(urlMonth)) {
+    sessionStorage.setItem('khidma_month', urlMonth);
+    return urlMonth;
+  }
+  const stored = sessionStorage.getItem('khidma_month');
+  if (stored && /^\d{4}-\d{2}$/.test(stored)) return stored;
+  return currentMonth();
+}
+
+function setWorkingMonth(ym) {
+  sessionStorage.setItem('khidma_month', ym);
+}
+
+function addMonths(ym, delta) {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+async function getMonthStatus(ym) {
+  const real = currentMonth();
+  try {
+    const snap = await ref(`months/${ym}/status`).once('value');
+    const status = snap.val();
+    if (status === 'closed') return 'closed';
+  } catch(e) {}
+  if (ym < real) return 'past';
+  if (ym === real) return 'current';
+  return 'future';
+}
+
+/**
+ * Renders the Smart Month Chip in the topbar.
+ * container: DOM element ID (string) — a <span> or <div> in topbar .right
+ * onChange(ym): callback when month changes
+ */
+async function renderMonthChip(containerId, onChange) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const active = getWorkingMonth();
+  const real = currentMonth();
+  const status = await getMonthStatus(active);
+
+  const statusColor = {
+    closed: '#5a6b62',
+    past: '#8b6a1e',
+    current: '#2d6a4f',
+    future: '#3b7a9e'
+  }[status];
+  const statusLabel = {
+    closed: '🔒 مقفل',
+    past: '📄 مسودة',
+    current: '✅ الحالي',
+    future: '📅 مستقبل'
+  }[status];
+
+  el.innerHTML = `
+    <div class="month-chip" onclick="openMonthPicker(event)" style="
+      display:inline-flex;align-items:center;gap:6px;
+      background:rgba(255,255,255,0.15);padding:6px 12px;border-radius:20px;
+      cursor:pointer;font-size:12.5px;font-weight:600;color:#fff;
+      border:1px solid rgba(255,255,255,0.2);transition:all 150ms;
+    " onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'">
+      <span>📅 ${arabicMonth(active)}</span>
+      <span style="background:${statusColor};padding:1px 8px;border-radius:10px;font-size:10px">${statusLabel}</span>
+      <span style="opacity:0.7;font-size:10px">▼</span>
+    </div>
+  `;
+  window._monthChipOnChange = onChange;
+
+  // Render safety banner if not current month
+  renderMonthSafetyBanner(active, real);
+}
+
+function renderMonthSafetyBanner(active, real) {
+  let banner = document.getElementById('monthSafetyBanner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'monthSafetyBanner';
+    banner.style.cssText = 'display:none;background:#fdf7e3;border-bottom:3px solid #b8860b;padding:10px 20px;text-align:center;font-size:13px;color:#6d4e00;position:sticky;top:0;z-index:5;font-weight:600';
+    const topbar = document.querySelector('.topbar');
+    if (topbar) topbar.insertAdjacentElement('afterend', banner);
+    else document.body.insertBefore(banner, document.body.firstChild);
+  }
+  if (active !== real) {
+    banner.style.display = 'block';
+    banner.innerHTML = `⚠️ أنت تعمل على <b>${arabicMonth(active)}</b> — ليس الشهر الحالي. <a href="javascript:void(0)" onclick="switchToCurrentMonth()" style="color:#1b4332;text-decoration:underline;margin-right:8px">◄ العودة لـ ${arabicMonth(real)}</a>`;
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+function switchToCurrentMonth() {
+  const real = currentMonth();
+  setWorkingMonth(real);
+  location.reload();
+}
+
+async function openMonthPicker(ev) {
+  ev.stopPropagation();
+  // Close existing
+  document.querySelectorAll('.month-picker-dropdown').forEach(e => e.remove());
+
+  const real = currentMonth();
+  const active = getWorkingMonth();
+  // Show 6 months: 3 past, current, 2 future
+  const months = [];
+  for (let i = -3; i <= 2; i++) months.push(addMonths(real, i));
+
+  const statuses = {};
+  for (const m of months) statuses[m] = await getMonthStatus(m);
+
+  const statusIcon = { closed: '🔒', past: '📄', current: '✅', future: '📅' };
+  const statusText = { closed: 'مقفل', past: 'مسودة', current: 'الحالي', future: 'مستقبل' };
+
+  const dd = document.createElement('div');
+  dd.className = 'month-picker-dropdown';
+  dd.style.cssText = 'position:fixed;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.15);border-radius:10px;padding:6px;z-index:1000;min-width:240px;border:1px solid #e5ddd0;direction:rtl';
+
+  const rect = ev.currentTarget.getBoundingClientRect();
+  dd.style.top = (rect.bottom + 4) + 'px';
+  dd.style.right = (window.innerWidth - rect.right) + 'px';
+
+  dd.innerHTML = months.map(m => {
+    const s = statuses[m];
+    const isActive = m === active;
+    return `<div onclick="pickMonth('${m}')" style="
+      padding:9px 12px;cursor:pointer;border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;
+      ${isActive ? 'background:#e8f0eb;color:#1b4332;font-weight:700' : 'color:#1a2c23'}
+    " onmouseover="if(!${isActive})this.style.background='#faf7f0'" onmouseout="if(!${isActive})this.style.background='transparent'">
+      <span>${statusIcon[s]} ${arabicMonth(m)}</span>
+      <span style="font-size:10px;opacity:0.65">${statusText[s]}</span>
+    </div>`;
+  }).join('');
+
+  document.body.appendChild(dd);
+  setTimeout(() => {
+    const close = (e) => { if (!dd.contains(e.target)) { dd.remove(); document.removeEventListener('click', close); } };
+    document.addEventListener('click', close);
+  }, 10);
+}
+
+function pickMonth(ym) {
+  setWorkingMonth(ym);
+  document.querySelectorAll('.month-picker-dropdown').forEach(e => e.remove());
+  if (window._monthChipOnChange) window._monthChipOnChange(ym);
+  else location.reload();
+}
+
 function arabicMonth(ym) {
   if (!ym) return '';
   const [y,m] = ym.split('-').map(Number);

@@ -57,7 +57,8 @@
 <div class="topbar">
   <h1>👥 إدارة الكفالات</h1>
   <div class="right">
-    <a href="home.html">الرئيسية</a>
+    <a href="home.html">🏠 الرئيسية</a>
+    <span id="monthChipHolder"></span>
     <a href="closure.html" class="hide-mobile">إقفال</a>
     <a href="reports.html" class="hide-mobile">تقارير</a>
     <a href="backups.html" class="hide-mobile">النسخ</a>
@@ -75,7 +76,7 @@
   <div class="tabs">
     <button class="tab active" onclick="switchTab('kafalat')">الكفالات</button>
     <button class="tab" onclick="switchTab('people')">الأشخاص</button>
-    <button class="tab" onclick="switchTab('edits')">تعديلات نوفمبر</button>
+    <button class="tab" onclick="switchTab('edits')">⚡ زيادات وقتية</button>
   </div>
 
   <!-- PANE: KAFALAT -->
@@ -170,8 +171,11 @@
   <!-- PANE: EDITS -->
   <div class="pane" id="pane-edits">
     <div class="card">
-      <h3>📝 تعديلات نوفمبر ٢٠٢٦ (طابور الإقفال)</h3>
-      <p class="text-muted text-sm">كل تعديل تعمله هنا بينضاف للطابور. اعدي على <a href="closure.html">إقفال الشهر</a> لما تخلص.</p>
+      <h3>⚡ الزيادات الوقتية للشهر الحالي</h3>
+      <p class="text-muted text-sm">
+        التعديلات الدائمة (كفالة جديدة/إلغاء/تغيير مبلغ/تويد) تُطبَّق فوراً في Firebase و تظهر في التحصيل.
+        <br>فقط <b>الزيادات الوقتية</b> (one-off) تدخل الطابور و تُطبّق في الإقفال فقط.
+      </p>
       <div id="editsList"></div>
     </div>
   </div>
@@ -188,9 +192,11 @@ initFirebase();
 
 let allKafalat = {}, allPeople = {}, config = {}, pendingEdits = [];
 let caseFilter = '';
-const CURRENT_MONTH = '2026-11';
+let CURRENT_MONTH = getWorkingMonth();
 
 async function load() {
+  CURRENT_MONTH = getWorkingMonth();
+  renderMonthChip('monthChipHolder', (ym) => { CURRENT_MONTH = ym; load(); });
   [allPeople, allKafalat, config] = await Promise.all([fetchPeople(), fetchKafalat(), fetchConfig()]);
   const eSnap = await ref(`months/${CURRENT_MONTH}/edits`).once('value');
   const eVal = eSnap.val() || {};
@@ -256,7 +262,7 @@ function renderStats() {
       <div class="value">${prepaidCount}</div>
     </div>
     <div class="stat">
-      <div class="label">تعديلات نوفمبر</div>
+      <div class="label">⚡ زيادات وقتية ${arabicMonth(CURRENT_MONTH)}</div>
       <div class="value">${pendingEdits.length}</div>
     </div>
   `;
@@ -527,36 +533,28 @@ async function saveKafala(kid) {
   };
 
   const ok = await confirmImpact({
-    title: 'تأكيد تعديل كفالة',
-    message: `هذا التعديل يُسجَّل في طابور تعديلات نوفمبر و يُطبّق عند الإقفال.`,
+    title: 'تأكيد تعديل كفالة (تطبيق فوري)',
+    message: `هذا التعديل يُطبَّق فوراً و يظهر في التحصيل.`,
     impact: [
       `الطفل: <b>${updates.child}</b>`,
       `ولي الأمر: <b>${personName(allPeople, updates.guardian_id)}</b>`,
       `المنطقة: <b>${areaDisplay(updates.area)}</b>`,
-      `الحالة: <b>${updates.status}</b>`
+      `الحالة: <b>${updates.status}</b>`,
+      `<b>⚡ يطبّق فوراً</b> في ${arabicMonth(CURRENT_MONTH)} والشهور القادمة`
     ]
   });
   if (!ok) return;
 
-  // Save as pending edit (not direct apply - follows closure flow)
-  const editId = uid();
-  await ref(`months/${CURRENT_MONTH}/edits/${editId}`).set({
-    type: 'kafala_update',
-    target_id: kid,
-    target_label: `${k.child} / ${personName(allPeople, k.guardian_id)}`,
-    description: 'تحديث بيانات الكفالة',
-    before: {
-      child: k.child, guardian_id: k.guardian_id, area: k.area,
-      case_type: k.case_type, status: k.status,
-      child_gender: k.child_gender, child_dob: k.child_dob,
-      school_level: k.school_level, subtype: k.subtype, special_notes: k.special_notes
-    },
-    after: updates,
-    ts: Date.now(),
-    author: 'youssef'
-  });
-  await auditLog('add_edit_kafala', `months/${CURRENT_MONTH}/edits/${editId}`, null, updates);
-  toast('✓ أُضيف للطابور', 'success');
+  // IMMEDIATE APPLY to Firebase + audit log
+  const before = {
+    child: k.child, guardian_id: k.guardian_id, area: k.area,
+    case_type: k.case_type, status: k.status,
+    child_gender: k.child_gender, child_dob: k.child_dob,
+    school_level: k.school_level, subtype: k.subtype, special_notes: k.special_notes
+  };
+  await ref(`kafalat/${kid}`).update(updates);
+  await auditLog('kafala_update', `kafalat/${kid}`, before, updates, {month: CURRENT_MONTH});
+  toast('✓ تم تطبيق التعديل', 'success');
   closeModal();
   await load();
 }
@@ -712,31 +710,24 @@ async function saveNewKafala() {
   };
 
   const ok = await confirmImpact({
-    title: 'إضافة كفالة جديدة',
-    message: 'سيتم إنشاء كفالة جديدة في طابور نوفمبر.',
+    title: 'إضافة كفالة جديدة (تطبيق فوري)',
+    message: 'سيتم إنشاء الكفالة فوراً و تظهر في التحصيل.',
     impact: [
       `الطفل: <b>${child}</b>`,
       `المنطقة: <b>${areaDisplay(area)}</b>`,
       `المصدر: <b>${src==='kafeel'?personName(allPeople, funding.kafeel_id):src}</b>`,
       `المبلغ: <b>${fmt(amount)} جنيه</b>`,
-      prepaid ? `مدفوع حتى: <b>${arabicMonth(prepaid)}</b>` : ''
+      prepaid ? `مدفوع حتى: <b>${arabicMonth(prepaid)}</b>` : '',
+      `<b>⚡ يطبّق فوراً</b> في ${arabicMonth(CURRENT_MONTH)}`
     ].filter(x=>x)
   });
   if (!ok) return;
 
+  // IMMEDIATE APPLY
   const kid = 'k_' + uid();
-  const editId = uid();
-  await ref(`months/${CURRENT_MONTH}/edits/${editId}`).set({
-    type: 'kafala_new',
-    target_id: kid,
-    target_label: child,
-    description: `جديد - ${areaDisplay(area)} - ${fmt(amount)} جنيه`,
-    after: newKafala,
-    ts: Date.now(),
-    author: 'youssef'
-  });
-  await auditLog('queue_new_kafala', `months/${CURRENT_MONTH}/edits/${editId}`, null, {kid, child});
-  toast('✓ أُضيف للطابور', 'success');
+  await ref(`kafalat/${kid}`).set(newKafala);
+  await auditLog('kafala_new', `kafalat/${kid}`, null, {kid, child, amount}, {month: CURRENT_MONTH});
+  toast('✓ تم إنشاء الكفالة', 'success');
   closeModal();
   await load();
 }
@@ -796,29 +787,24 @@ async function saveAddFunding(kid) {
   if (prepaid && /^\d{4}-\d{2}$/.test(prepaid)) funding.prepaid_through = prepaid;
 
   const ok = await confirmImpact({
-    title: 'إضافة مصدر تمويل',
+    title: 'إضافة مصدر تمويل (تطبيق فوري)',
     message: `إضافة لكفالة ${k.child}`,
     impact: [
       `المصدر: <b>${src==='kafeel'?personName(allPeople, funding.kafeel_id):src}</b>`,
       `المبلغ: <b>${fmt(amount)}</b>`,
       prepaid ? `مدفوع حتى: <b>${arabicMonth(prepaid)}</b>` : '',
-      `إجمالي الكفالة بعد الإضافة: <b>${fmt(kafalaBaseAmount(k) + amount)}</b>`
+      `إجمالي الكفالة بعد الإضافة: <b>${fmt(kafalaBaseAmount(k) + amount)}</b>`,
+      `<b>⚡ يطبّق فوراً</b> في ${arabicMonth(CURRENT_MONTH)}`
     ].filter(x=>x)
   });
   if (!ok) return;
 
-  const editId = uid();
-  await ref(`months/${CURRENT_MONTH}/edits/${editId}`).set({
-    type: 'funding_add',
-    target_id: kid,
-    target_label: `${k.child} / ${personName(allPeople, k.guardian_id)}`,
-    description: `+ مصدر: ${src==='kafeel'?personName(allPeople, funding.kafeel_id):src} (${fmt(amount)})`,
-    after: funding,
-    ts: Date.now(),
-    author: 'youssef'
-  });
-  await auditLog('queue_funding_add', `months/${CURRENT_MONTH}/edits/${editId}`, null, funding);
-  toast('✓ أُضيف للطابور', 'success');
+  // IMMEDIATE APPLY
+  const updatedFunding = [...(k.funding || []), funding];
+  await ref(`kafalat/${kid}/funding`).set(updatedFunding);
+  await ref(`kafalat/${kid}/updated_at`).set(Date.now());
+  await auditLog('funding_add', `kafalat/${kid}/funding`, null, funding, {month: CURRENT_MONTH});
+  toast('✓ تم إضافة المصدر', 'success');
   closeModal();
   await load();
 }
@@ -910,28 +896,51 @@ async function saveEditFunding(kid, fid) {
     description = `حذف مصدر: ${f.source==='kafeel'?personName(allPeople,f.kafeel_id):f.source} (${fmt(f.amount)})`;
   }
 
+  // ONE-OFF edits stay as pending; everything else applies immediately
+  const isOneoff = (editType === 'oneoff');
+  const applyLabel = isOneoff
+    ? `<b>⏸️ يُضاف للطابور</b> و يُطبّق عند إقفال ${arabicMonth(CURRENT_MONTH)} فقط`
+    : `<b>⚡ يطبّق فوراً</b> في ${arabicMonth(CURRENT_MONTH)}`;
+
   const ok = await confirmImpact({
-    title: 'تعديل مصدر تمويل',
+    title: isOneoff ? 'زيادة وقتية (للإقفال فقط)' : 'تعديل مصدر تمويل (تطبيق فوري)',
     message: `كفالة: ${k.child}`,
-    impact: [description, note?`ملاحظة: ${note}`:''].filter(x=>x)
+    impact: [description, note?`ملاحظة: ${note}`:'', applyLabel].filter(x=>x)
   });
   if (!ok) return;
 
-  const editId = uid();
-  await ref(`months/${CURRENT_MONTH}/edits/${editId}`).set({
-    type: editType,
-    target_id: kid,
-    sub_id: fid,
-    target_label: `${k.child} / ${personName(allPeople, k.guardian_id)}`,
-    description,
-    note,
-    before: {amount: f.amount, kafeel_id: f.kafeel_id, pt_id: f.pt_id, prepaid_through: f.prepaid_through},
-    after,
-    ts: Date.now(),
-    author: 'youssef'
-  });
-  await auditLog('queue_' + editType, `months/${CURRENT_MONTH}/edits/${editId}`, {fid}, after);
-  toast('✓ أُضيف للطابور', 'success');
+  if (isOneoff) {
+    // Keep as pending edit
+    const editId = uid();
+    await ref(`months/${CURRENT_MONTH}/edits/${editId}`).set({
+      type: 'oneoff',
+      target_id: kid,
+      sub_id: fid,
+      target_label: `${k.child} / ${personName(allPeople, k.guardian_id)}`,
+      description, note,
+      before: null,
+      after,
+      ts: Date.now(),
+      author: 'youssef'
+    });
+    await auditLog('queue_oneoff', `months/${CURRENT_MONTH}/edits/${editId}`, null, after);
+    toast('✓ أُضيف للطابور (وقتية)', 'success');
+  } else {
+    // IMMEDIATE APPLY to Firebase
+    const funding = [...(k.funding || [])];
+    const idx = funding.findIndex(x => x.fid === fid);
+    if (idx < 0) { toast('❌ Funding not found', 'error'); return; }
+
+    if (editType === 'funding_remove') {
+      funding.splice(idx, 1);
+    } else {
+      funding[idx] = {...funding[idx], ...after};
+    }
+    await ref(`kafalat/${kid}/funding`).set(funding);
+    await ref(`kafalat/${kid}/updated_at`).set(Date.now());
+    await auditLog(editType, `kafalat/${kid}/funding/${fid}`, {amount: f.amount, kafeel_id: f.kafeel_id, pt_id: f.pt_id, prepaid_through: f.prepaid_through}, after, {month: CURRENT_MONTH, note});
+    toast('✓ تم التعديل', 'success');
+  }
   closeModal();
   await load();
 }
