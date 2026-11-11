@@ -1201,6 +1201,94 @@ function renderStep7() {
   document.getElementById('step7Preview').innerHTML = '';
 }
 
+// Export detailed CSV per funding entry — respects exclusions
+function exportAreaDetailed(area) {
+  const effective = effectiveKafalat();
+  const dist = state.zakat_distribution || {};
+  const excluded = getExcluded(area);
+
+  const rows = [[
+    '#','المنطقة','نوع الحالة','ولي الأمر / الحالة','اسم الطفل','تاريخ الميلاد',
+    'المصدر','اسم الكفيل','المحصّل (PT)','المبلغ','مدفوع مقدماً حتى','ملاحظات'
+  ]];
+
+  // Build guardian groupings consistent with the report view
+  const byGuardian = {};
+  Object.entries(effective).forEach(([kid, k]) => {
+    if (k.area !== area || k.status !== 'active') return;
+    const gid = k.guardian_id;
+    let label, key;
+    if (gid && allPeople[gid]?.name) { label = allPeople[gid].name; key = 'g:' + gid; }
+    else { label = k.child || (k.case_type||'').replace(/_/g,' '); key = 'k:' + kid; }
+    if (!byGuardian[key]) byGuardian[key] = {name: label, gid: gid || key, kafalat: []};
+    byGuardian[key].kafalat.push(k);
+  });
+  const sortedKeys = Object.keys(byGuardian).sort((a,b) =>
+    byGuardian[a].name.localeCompare(byGuardian[b].name, 'ar')
+  );
+
+  let serial = 0, grandBase = 0, grandZakat = 0;
+  sortedKeys.forEach(key => {
+    const g = byGuardian[key];
+    if (excluded.has(g.gid)) return;
+    serial++;
+    g.kafalat.forEach(k => {
+      (k.funding||[]).forEach(f => {
+        const sourceAr = f.source === 'kafeel' ? 'كفيل'
+                       : f.source === 'sadaqat' ? 'صدقات'
+                       : f.source === 'zakat' ? 'زكاة' : (f.source||'');
+        rows.push([
+          serial,
+          areaDisplay(k.area),
+          (k.case_type||'').replace(/_/g,' '),
+          g.name,
+          k.child || '',
+          k.child_dob || '',
+          sourceAr,
+          f.source === 'kafeel' ? ((allPeople[f.kafeel_id]||{}).name || '') : '',
+          f.pt_id ? ((allPeople[f.pt_id]||{}).name || '') : '',
+          f.amount || 0,
+          f.prepaid_through || '',
+          f.notes || ''
+        ]);
+        grandBase += f.amount || 0;
+      });
+    });
+    const zakatAmt = dist[g.gid] || 0;
+    if (zakatAmt > 0) {
+      rows.push([
+        serial, areaDisplay(area), '', g.name, '', '',
+        'زكاة توزيع', '', '', zakatAmt, '', 'توزيع زكاة الشهر'
+      ]);
+      grandZakat += zakatAmt;
+    }
+  });
+
+  rows.push([]);
+  rows.push(['','','','','','','','','المبلغ الأساسي:', grandBase, '', '']);
+  rows.push(['','','','','','','','','الإضافي (زكاة):', grandZakat, '', '']);
+  rows.push(['','','','','','','','','الإجمالي:', grandBase + grandZakat, '', '']);
+  rows.push(['','','','','','','','','المستثنى:', excluded.size, '', '']);
+
+  const csv = '﻿' + rows.map(r =>
+    r.map(c => {
+      const s = String(c ?? '');
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+    }).join(',')
+  ).join('\n');
+
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `تقرير_${areaDisplay(area).replace(/\s/g,'_')}_${CURRENT_MONTH}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast(`✓ تم تصدير ${serial} ولي أمر — مع ${excluded.size} مُستثنى`, 'success');
+}
+
 function renderAreaReport(area, skipScroll) {
   const effective = effectiveKafalat();
   const dist = state.zakat_distribution || {};
@@ -1327,9 +1415,13 @@ function renderAreaReport(area, skipScroll) {
         </tbody>
       </table>
 
-      <div class="flex gap mt" style="justify-content:center">
+      <div class="flex gap mt no-print" style="justify-content:center;flex-wrap:wrap">
         <button onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+        <button class="btn-gold" onclick="exportAreaDetailed('${area}')">📥 تصدير Excel مفصل</button>
         <button class="btn-ghost" onclick="document.getElementById('step7Preview').innerHTML=''">× إغلاق المعاينة</button>
+      </div>
+      <div class="no-print text-xs text-muted" style="text-align:center;margin-top:6px">
+        💡 التصدير المفصل يعطيك CSV بكل الأعمدة (المصدر، الكفيل، المحصّل، الملاحظات) ويحترم الاستثناءات الحالية.
       </div>
     </div>
   `;
