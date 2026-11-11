@@ -439,22 +439,50 @@ function switchTab(name) {
   document.getElementById('pane-' + name).classList.add('active');
 }
 
-// Modal helpers (shared)
-function modal(title, bodyHtml, onSave) {
+// Modal helpers — STACKABLE so sub-modals (new person) don't destroy parent modal state
+function modal(title, bodyHtml, onSave, options={}) {
   const container = document.getElementById('modalContainer');
-  container.innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()">
-    <div class="modal">
+  const existing = container.querySelectorAll('.modal-bg');
+  // If there's an existing modal, stack on top (do NOT destroy parent)
+  const modalId = 'modal_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+  const zIndex = 100 + existing.length * 10;
+  const html = `<div class="modal-bg" id="${modalId}" style="z-index:${zIndex}" onclick="if(event.target===this)closeModalById('${modalId}')">
+    <div class="modal" style="max-width:${options.wide ? '720px' : '560px'}">
       <h3>${title}</h3>
-      <div id="modalBody">${bodyHtml}</div>
+      <div id="modalBody_${modalId}">${bodyHtml}</div>
       <div class="modal-actions">
-        <button onclick="handleModalSave()">حفظ</button>
-        <button class="btn-ghost" onclick="closeModal()">إلغاء</button>
+        ${options.footerExtra || ''}
+        <button onclick="handleModalSave('${modalId}')">${options.saveLabel || 'حفظ'}</button>
+        <button class="btn-ghost" onclick="closeModalById('${modalId}')">إلغاء</button>
       </div>
     </div></div>`;
-  window._modalSave = onSave;
+  container.insertAdjacentHTML('beforeend', html);
+  window['_modalSave_' + modalId] = onSave;
+  window._topModalId = modalId;
+  return modalId;
 }
-function closeModal() { document.getElementById('modalContainer').innerHTML = ''; window._modalSave = null; }
-function handleModalSave() { if (window._modalSave) window._modalSave(); }
+function closeModalById(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+  delete window['_modalSave_' + id];
+  // Reset top modal id to the last remaining modal
+  const remaining = document.querySelectorAll('.modal-bg');
+  window._topModalId = remaining.length ? remaining[remaining.length-1].id : null;
+}
+function closeModal() {
+  // Close only the TOP modal (so sub-modals don't destroy parent)
+  if (window._topModalId) closeModalById(window._topModalId);
+}
+function closeAllModals() {
+  document.getElementById('modalContainer').innerHTML = '';
+  // Clean all handlers
+  Object.keys(window).filter(k => k.startsWith('_modalSave_')).forEach(k => delete window[k]);
+  window._topModalId = null;
+}
+function handleModalSave(id) {
+  const key = '_modalSave_' + id;
+  if (window[key]) window[key]();
+}
 
 // ============= EDIT KAFALA =============
 function openEditKafala(kid) {
@@ -586,14 +614,31 @@ function undoEdit(editId) {
   });
 }
 
-// ============= NEW KAFALA =============
+// ============= NEW KAFALA — CLEAN WIZARD WITH EXPLICIT COLLECTOR CHOICE =============
 function openNewKafala() {
   const schoolLevels = ['','ابتدائي','إعدادي','ثانوي','جامعي','دبلوم','خريج','لا_ينطبق'];
-  modal('كفالة جديدة', `
+
+  // Find youssef and nashwa person IDs (for "pays directly" options)
+  const youssefPerson = Object.entries(allPeople).find(([pid, p]) =>
+    (p.name === 'يوسف منير' || p.name === 'يوسف') && (p.roles||[]).includes('pt')
+  );
+  const nashwaPerson = Object.entries(allPeople).find(([pid, p]) =>
+    (p.name === 'نشوى صلاح' || p.name === 'نشوى') && (p.roles||[]).includes('pt')
+  );
+
+  modal('➕ كفالة جديدة', `
+    <div style="background:var(--cream-deep);padding:12px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;color:var(--muted)">
+      💡 كل البيانات محفوظة أثناء العمل — إضافة ولي/كفيل جديد لن يُلغي ما أدخلته
+    </div>
+
+    <h4 style="margin:4px 0 10px;color:var(--accent)">1️⃣ بيانات الطفل</h4>
     <div class="form-row">
-      <div><label>اسم الطفل *</label><input id="nk_child" placeholder="اسم الطفل الكامل"></div>
-      <div><label>ولي الأمر *</label>${renderPersonSelect('nk_guardian', '', 'guardian')}
-        <button class="btn-small btn-ghost mt-sm" onclick="openNewPerson(['guardian'], v => { document.getElementById('nk_guardian').value = v; })">+ إضافة ولي أمر جديد</button>
+      <div><label>اسم الطفل *</label><input id="nk_child" placeholder="الاسم الكامل"></div>
+      <div><label>ولي الأمر *</label>
+        <div style="display:flex;gap:4px">
+          ${renderPersonSelect('nk_guardian', '', 'guardian')}
+          <button class="btn-small" onclick="quickAddPerson('guardian', 'nk_guardian')" style="white-space:nowrap">+ جديد</button>
+        </div>
       </div>
     </div>
     <div class="form-row three">
@@ -614,52 +659,167 @@ function openNewKafala() {
           <option value="خبز">خبز</option>
         </select>
       </div>
-      <div><label>تاريخ البدء</label><input id="nk_start" placeholder="YYYY-MM" value="${currentMonth()}"></div>
+      <div><label>تاريخ البدء</label><input id="nk_start" placeholder="YYYY-MM" value="${getWorkingMonth()}"></div>
     </div>
-    <div class="form-row three">
-      <div><label>الجنس (اختياري)</label>
-        <select id="nk_gender"><option value="">—</option><option value="m">ذكر</option><option value="f">أنثى</option></select>
+    <details style="margin:8px 0 14px">
+      <summary style="cursor:pointer;color:var(--muted);font-size:12.5px">+ بيانات إضافية (اختيارية)</summary>
+      <div class="form-row three mt-sm">
+        <div><label>الجنس</label><select id="nk_gender"><option value="">—</option><option value="m">ذكر</option><option value="f">أنثى</option></select></div>
+        <div><label>تاريخ الميلاد</label><input id="nk_dob" placeholder="YYYY-MM-DD"></div>
+        <div><label>المرحلة التعليمية</label><select id="nk_school">${schoolLevels.map(s=>`<option value="${s}">${s||'—'}</option>`).join('')}</select></div>
       </div>
-      <div><label>تاريخ الميلاد (اختياري)</label><input id="nk_dob" placeholder="YYYY-MM-DD"></div>
-      <div><label>المرحلة التعليمية (اختياري)</label>
-        <select id="nk_school">${schoolLevels.map(s=>`<option value="${s}">${s||'—'}</option>`).join('')}</select>
+      <div class="form-row single">
+        <div><label>تفاصيل إضافية</label><input id="nk_subtype" placeholder="مثال: طالبة في كلية الآداب"></div>
       </div>
-    </div>
-    <div class="form-row single">
-      <div><label>تفاصيل إضافية (اختياري)</label><input id="nk_subtype" placeholder="مثال: طالبة في كلية الآداب"></div>
-    </div>
-    <h4 style="margin-top:20px">مصدر التمويل الأول</h4>
+    </details>
+
+    <h4 style="margin:18px 0 10px;color:var(--accent)">2️⃣ من اللي هيدفع؟</h4>
     <div class="form-row three">
       <div><label>المصدر *</label>
-        <select id="nk_src" onchange="toggleNkKafeel()">
-          <option value="kafeel">كفيل محدد</option>
-          <option value="sadaqat">صدقات</option>
-          <option value="zakat">زكاة</option>
+        <select id="nk_src" onchange="toggleNkFunding()">
+          <option value="kafeel">👤 كفيل محدد</option>
+          <option value="sadaqat">🤲 صدقات</option>
+          <option value="zakat">💰 زكاة</option>
         </select>
       </div>
-      <div id="nk_kafeel_wrap"><label>الكفيل *</label>${renderPersonSelect('nk_kafeel', '', 'kafeel')}
-        <button class="btn-small btn-ghost mt-sm" onclick="openNewPerson(['kafeel'], v => { document.getElementById('nk_kafeel').value = v; refreshNkPt(v); })">+ كفيل جديد</button>
+      <div id="nk_kafeel_wrap"><label>الكفيل *</label>
+        <div style="display:flex;gap:4px">
+          ${renderPersonSelect('nk_kafeel', '', 'kafeel')}
+          <button class="btn-small" onclick="quickAddPerson('kafeel', 'nk_kafeel')" style="white-space:nowrap">+ جديد</button>
+        </div>
       </div>
       <div><label>المبلغ *</label><input id="nk_amount" type="number" placeholder="500"></div>
     </div>
-    <div class="form-row" id="nk_pt_wrap">
-      <div><label>محصّل (PT) - من اللي نشوى تحصّل منه</label>${renderPersonSelect('nk_pt', '', 'pt')}</div>
-      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="nk_prepaid" placeholder="YYYY-MM"></div>
+
+    <div id="nk_collector_wrap">
+      <h4 style="margin:18px 0 10px;color:var(--accent)">3️⃣ لمين هيدفع؟ (المحصّل)</h4>
+      <div class="form-row single">
+        <div>
+          <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#fff;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer">
+            <input type="radio" name="nk_collector_type" value="pt_specific" onchange="toggleCollectorChoice()" style="width:auto">
+            <div>
+              <div style="font-weight:700;font-size:13px">👥 عن طريق PT محدد</div>
+              <div style="font-size:11.5px;color:var(--muted)">الكفيل يدفع لشخص من اللي بيحصّلوا و هو بعدها بيسلّم لنشوى أو يوسف</div>
+            </div>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#fff;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer">
+            <input type="radio" name="nk_collector_type" value="direct_nashwa" onchange="toggleCollectorChoice()" style="width:auto">
+            <div>
+              <div style="font-weight:700;font-size:13px">👩 يدفع مباشرة لنشوى</div>
+              <div style="font-size:11.5px;color:var(--muted)">الكفيل = PT نفسه، نشوى تحصّل منه مباشرة</div>
+            </div>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#fff;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer">
+            <input type="radio" name="nk_collector_type" value="direct_youssef" onchange="toggleCollectorChoice()" style="width:auto">
+            <div>
+              <div style="font-weight:700;font-size:13px">🧑‍💼 يدفع مباشرة ليوسف</div>
+              <div style="font-size:11.5px;color:var(--muted)">الكفيل = PT نفسه تحت يوسف</div>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div id="nk_pt_select_wrap" style="display:none" class="form-row">
+        <div><label>اختار الـ PT الموجود *</label>
+          <div style="display:flex;gap:4px">
+            ${renderPersonSelect('nk_pt', '', 'pt')}
+            <button class="btn-small" onclick="quickAddPerson('pt', 'nk_pt')" style="white-space:nowrap">+ PT جديد</button>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">💡 لو مش موجود، اضغط + PT جديد</div>
+        </div>
+      </div>
+      <div class="form-row single mt-sm">
+        <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="nk_prepaid" placeholder="YYYY-MM"></div>
+      </div>
     </div>
-  `, saveNewKafala);
-  setTimeout(toggleNkKafeel, 50);
+
+    <input type="hidden" id="_youssef_pid" value="${youssefPerson?youssefPerson[0]:''}">
+    <input type="hidden" id="_nashwa_pid" value="${nashwaPerson?nashwaPerson[0]:''}">
+  `, saveNewKafala, {wide: true, saveLabel: '➕ إضافة الكفالة'});
+
+  setTimeout(() => {
+    toggleNkFunding();
+    toggleCollectorChoice();
+  }, 50);
 }
 
-function toggleNkKafeel() {
+function toggleNkFunding() {
   const src = document.getElementById('nk_src').value;
   document.getElementById('nk_kafeel_wrap').style.display = src === 'kafeel' ? '' : 'none';
-  document.getElementById('nk_pt_wrap').style.display = src === 'kafeel' ? '' : 'none';
+  document.getElementById('nk_collector_wrap').style.display = src === 'kafeel' ? '' : 'none';
 }
 
-function refreshNkPt(kafeelId) {
-  // When new kafeel added, default pt = kafeel
-  const sel = document.getElementById('nk_pt');
-  if (sel && !sel.value) sel.value = kafeelId;
+function toggleCollectorChoice() {
+  const sel = document.querySelector('input[name="nk_collector_type"]:checked');
+  const val = sel ? sel.value : null;
+  document.getElementById('nk_pt_select_wrap').style.display = val === 'pt_specific' ? '' : 'none';
+}
+
+// Quick inline Add Person modal that STACKS on top (preserves parent state)
+function quickAddPerson(presetRole, targetFieldId) {
+  modal('➕ إضافة ' + (presetRole==='guardian'?'ولي أمر':presetRole==='kafeel'?'كفيل':'PT (محصّل)') + ' جديد', `
+    <div class="form-row">
+      <div><label>الاسم *</label><input id="qp_name" placeholder="الاسم الكامل" autofocus></div>
+      <div><label>المنطقة (اختياري)</label>
+        <select id="qp_area">
+          <option value="">—</option>
+          <option value="الصف">الصف</option>
+          <option value="كفر_علو">كفر علو</option>
+          <option value="المعصرة">المعصرة</option>
+          <option value="أماكن_أخرى">أماكن أخرى</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div><label>هاتف (اختياري)</label><input id="qp_phone"></div>
+      <div><label>ملاحظات (اختياري)</label><input id="qp_notes"></div>
+    </div>
+    ${presetRole === 'pt' ? `
+      <div class="form-row single">
+        <div><label>بيحصّل تحت مين؟ *</label>
+          <select id="qp_collector">
+            <option value="nashwa">👩 نشوى</option>
+            <option value="youssef">🧑‍💼 يوسف</option>
+          </select>
+        </div>
+      </div>
+    ` : ''}
+  `, async () => {
+    const name = document.getElementById('qp_name').value.trim();
+    if (!name) return toast('الاسم مطلوب', 'error');
+    const person = {
+      name, aliases: [], roles: [presetRole],
+      area: document.getElementById('qp_area').value || null,
+      phone: document.getElementById('qp_phone').value.trim() || null,
+      relationship_to_child: null,
+      notes: document.getElementById('qp_notes').value.trim() || '',
+      active: true,
+      created_at: Date.now(), updated_at: Date.now()
+    };
+    if (presetRole === 'pt') {
+      person.collector = document.getElementById('qp_collector').value;
+    }
+    const pid = 'p_' + uid();
+    await ref(`people/${pid}`).set(person);
+    await auditLog('add_person', `people/${pid}`, null, person, {
+      revertable: true, revert_action: 'delete_person', revert_target: pid
+    });
+    allPeople[pid] = person;
+    // Refresh the target field with new option
+    refreshPersonSelectInline(targetFieldId, presetRole, pid);
+    toast(`✓ تم إضافة ${name}`, 'success');
+    closeModal();  // closes only the top (this quickAdd) modal
+  }, {saveLabel: '💾 حفظ وارجع'});
+}
+
+function refreshPersonSelectInline(selectId, role, selectValue) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  let people = Object.entries(allPeople).map(([pid,p])=>({pid,...p}));
+  if (role) people = people.filter(p => (p.roles||[]).includes(role));
+  people.sort((a,b) => a.name.localeCompare(b.name));
+  sel.innerHTML = '<option value="">— اختر —</option>' +
+    people.map(p => `<option value="${p.pid}" ${selectValue===p.pid?'selected':''}>${p.name}</option>`).join('');
+  sel.value = selectValue;
 }
 
 async function saveNewKafala() {
@@ -687,9 +847,25 @@ async function saveNewKafala() {
     const kafeel_id = document.getElementById('nk_kafeel').value;
     if (!kafeel_id) return toast('الكفيل مطلوب', 'error');
     funding.kafeel_id = kafeel_id;
-    const pt = document.getElementById('nk_pt').value;
-    if (pt) funding.pt_id = pt;
-    else funding.pt_id = kafeel_id; // default: kafeel is own PT
+
+    // Collector choice (who collects from this kafeel)
+    const collectorChoice = document.querySelector('input[name="nk_collector_type"]:checked');
+    if (!collectorChoice) return toast('اختر من يحصّل من هذا الكفيل', 'error');
+
+    const choice = collectorChoice.value;
+    if (choice === 'pt_specific') {
+      const pt = document.getElementById('nk_pt').value;
+      if (!pt) return toast('اختر PT محدد أو أضف واحد جديد', 'error');
+      funding.pt_id = pt;
+    } else if (choice === 'direct_nashwa') {
+      // Kafeel pays directly to Nashwa → kafeel IS the PT, mark collector=nashwa
+      funding.pt_id = kafeel_id;
+      // Ensure the kafeel person has role=pt and collector=nashwa
+      await ensurePtRole(kafeel_id, 'nashwa');
+    } else if (choice === 'direct_youssef') {
+      funding.pt_id = kafeel_id;
+      await ensurePtRole(kafeel_id, 'youssef');
+    }
   }
 
   const prepaid = document.getElementById('nk_prepaid').value.trim();
@@ -733,9 +909,26 @@ async function saveNewKafala() {
     revert_action: 'delete_kafala',
     revert_target: kid
   });
-  toast('✓ تم إنشاء الكفالة', 'success');
-  closeModal();
+  toast('✓ الكفالة تمت و ظاهرة في التحصيل', 'success');
+  closeAllModals();  // close all stacked modals
   await load();
+}
+
+// Helper: ensure a person has 'pt' role and set their collector
+async function ensurePtRole(pid, collector) {
+  const p = allPeople[pid];
+  if (!p) return;
+  const roles = p.roles || [];
+  const changed = !roles.includes('pt') || p.collector !== collector;
+  if (!roles.includes('pt')) roles.push('pt');
+  const updates = {roles, collector, updated_at: Date.now()};
+  if (changed) {
+    await ref(`people/${pid}`).update(updates);
+    await auditLog('ensure_pt_role', `people/${pid}`, {roles: p.roles, collector: p.collector}, updates, {
+      revertable: true, revert_action: 'restore_person', revert_target: pid
+    });
+    Object.assign(allPeople[pid], updates);
+  }
 }
 
 // ============= ADD FUNDING to existing kafala =============

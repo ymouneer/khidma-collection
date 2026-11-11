@@ -248,11 +248,15 @@ function toast(msg, type='info') {
 
 // ============================================================
 // Impact confirmation modal
+// Always appears on top of any other modals (z-index 9999+)
 // ============================================================
 function confirmImpact({title='تأكيد', message='', impact=[], danger=false}={}) {
   return new Promise(resolve => {
     const bg = document.createElement('div');
     bg.className = 'modal-bg';
+    // Compute z-index above any existing modals (base 9000 ensures top)
+    const existingModals = document.querySelectorAll('.modal-bg');
+    bg.style.zIndex = 9000 + existingModals.length;
     bg.innerHTML = `
       <div class="modal">
         <h3 style="color:${danger?'var(--danger)':'var(--accent)'}">${title}</h3>
