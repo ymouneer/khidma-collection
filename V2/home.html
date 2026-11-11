@@ -77,6 +77,98 @@
     text-align: center; padding: 30px; color: var(--muted-light);
     font-size: 11.5px; letter-spacing: 0.05em; text-transform: uppercase;
   }
+
+  /* ───── Monthly notes panel ───── */
+  .notes-wrap {
+    max-width: 1080px; margin: 10px auto 0; padding: 0 20px;
+  }
+  .notes-card {
+    background: #fff; border: 1px solid var(--border-light); border-radius: var(--r-lg);
+    padding: 20px 22px; box-shadow: var(--shadow-sm);
+  }
+  .notes-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 14px; flex-wrap: wrap; gap: 8px;
+  }
+  .notes-title {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 16px; font-weight: 700; color: var(--accent);
+  }
+  .notes-title .count {
+    background: var(--gold); color: #fff; padding: 2px 10px;
+    border-radius: 12px; font-size: 11px; font-weight: 700;
+  }
+  .notes-filter {
+    display: flex; gap: 4px; background: var(--cream); padding: 3px;
+    border-radius: 20px; font-size: 11.5px;
+  }
+  .notes-filter button {
+    background: transparent; border: none; padding: 5px 12px;
+    border-radius: 16px; cursor: pointer; color: var(--muted); font-weight: 600;
+  }
+  .notes-filter button.active { background: var(--accent); color: #fff; }
+
+  .note-input-row {
+    display: grid; grid-template-columns: 110px 1fr auto; gap: 8px;
+    margin-bottom: 14px; align-items: stretch;
+  }
+  .note-input-row select, .note-input-row input, .note-input-row button {
+    padding: 10px 14px; border-radius: var(--r-sm); border: 1px solid var(--border);
+    font-size: 13.5px; font-family: inherit;
+  }
+  .note-input-row select { background: #fff; }
+  .note-input-row button {
+    background: var(--accent); color: #fff; border: none; cursor: pointer;
+    font-weight: 700;
+  }
+  .note-input-row button:hover { background: var(--accent-light); }
+
+  .note-item {
+    display: flex; gap: 10px; padding: 12px 14px; margin-bottom: 6px;
+    background: var(--cream); border-radius: var(--r-sm);
+    border-right: 3px solid var(--accent);
+    transition: all var(--t-fast);
+  }
+  .note-item.urgent { border-right-color: #d9534f; background: #fdf1f0; }
+  .note-item.idea   { border-right-color: var(--gold); background: #fdf7e8; }
+  .note-item.done   { opacity: 0.45; background: #f2f3f0; border-right-color: var(--success); }
+  .note-item.done .note-text { text-decoration: line-through; }
+
+  .note-check {
+    flex-shrink: 0; width: 20px; height: 20px; cursor: pointer;
+    border: 2px solid var(--border); border-radius: 4px; background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; color: var(--success); font-weight: 700;
+  }
+  .note-check.checked { border-color: var(--success); background: var(--success); color: #fff; }
+
+  .note-body { flex: 1; min-width: 0; }
+  .note-text { font-size: 14px; color: var(--ink); line-height: 1.5; word-break: break-word; }
+  .note-meta {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    font-size: 11px; color: var(--muted); margin-top: 4px;
+  }
+  .note-meta .tag {
+    padding: 1px 7px; border-radius: 10px; font-weight: 600;
+  }
+  .note-meta .tag.urgent { background: #fde4e2; color: #8e2d26; }
+  .note-meta .tag.idea   { background: #fcefc9; color: #6d4e00; }
+  .note-meta .tag.normal { background: #e4ece7; color: #2f5b3f; }
+
+  .note-del {
+    flex-shrink: 0; background: transparent; border: none; cursor: pointer;
+    color: var(--muted); font-size: 16px; padding: 4px 8px; border-radius: 4px;
+  }
+  .note-del:hover { background: #fde4e2; color: #d9534f; }
+
+  .notes-empty {
+    text-align: center; padding: 30px 20px; color: var(--muted-light);
+    font-size: 13px;
+  }
+
+  @media (max-width: 600px) {
+    .note-input-row { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -91,6 +183,35 @@
   <h1>بسم الله<br>الرحمن الرحيم</h1>
   <div class="sub">إدارة الكفالات الشهرية للأيتام — مع ضمان الأمان والدقة</div>
   <div class="salawat">اللهم صلّ على سيدنا محمد ﷺ</div>
+</div>
+
+<!-- MONTHLY NOTES PANEL -->
+<div class="notes-wrap">
+  <div class="notes-card">
+    <div class="notes-head">
+      <div class="notes-title">
+        📝 <span>ملاحظات شهر <span id="notesMonthLbl">—</span></span>
+        <span class="count" id="notesCount">0</span>
+      </div>
+      <div class="notes-filter" id="notesFilter">
+        <button data-f="open" class="active">المفتوحة</button>
+        <button data-f="all">الكل</button>
+        <button data-f="done">المحلولة</button>
+      </div>
+    </div>
+
+    <div class="note-input-row">
+      <select id="notePriority">
+        <option value="normal">💬 عادية</option>
+        <option value="urgent">🚨 عاجلة</option>
+        <option value="idea">💡 فكرة</option>
+      </select>
+      <input id="noteText" type="text" placeholder="اكتب ملاحظة للشهر الحالي..." onkeypress="if(event.key==='Enter')addNote()">
+      <button onclick="addNote()">+ إضافة</button>
+    </div>
+
+    <div id="notesList"></div>
+  </div>
 </div>
 
 <div class="grid">
@@ -141,7 +262,125 @@
 <script src="config.js"></script>
 <script>
 initFirebase();
-renderMonthChip('monthChipHolder', () => location.reload());
+
+let CURRENT_MONTH = getWorkingMonth();
+let noteFilter = 'open';
+let notesCache = [];
+
+renderMonthChip('monthChipHolder', (ym) => {
+  CURRENT_MONTH = ym;
+  document.getElementById('notesMonthLbl').textContent = arabicMonth(ym);
+  loadNotes();
+});
+
+document.getElementById('notesMonthLbl').textContent = arabicMonth(CURRENT_MONTH);
+
+// Filter buttons
+document.querySelectorAll('#notesFilter button').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('#notesFilter button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    noteFilter = b.dataset.f;
+    renderNotes();
+  };
+});
+
+async function loadNotes() {
+  const snap = await ref(`months/${CURRENT_MONTH}/notes`).once('value');
+  const val = snap.val() || {};
+  notesCache = Object.entries(val).map(([id, n]) => ({id, ...n}));
+  notesCache.sort((a, b) => (b.created_at||0) - (a.created_at||0));
+  renderNotes();
+}
+
+function renderNotes() {
+  const list = document.getElementById('notesList');
+  let items = notesCache.slice();
+  if (noteFilter === 'open') items = items.filter(n => !n.done);
+  if (noteFilter === 'done') items = items.filter(n => n.done);
+
+  // Count unresolved
+  const openCount = notesCache.filter(n => !n.done).length;
+  document.getElementById('notesCount').textContent = openCount;
+
+  if (!items.length) {
+    list.innerHTML = `<div class="notes-empty">
+      ${noteFilter === 'open'
+        ? '✨ لا توجد ملاحظات مفتوحة — كل شيء على ما يرام'
+        : noteFilter === 'done'
+        ? 'لم يُحل أي ملاحظة بعد'
+        : 'لا توجد ملاحظات لهذا الشهر — أضف أول واحدة بالأعلى'}
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = items.map(n => {
+    const date = new Date(n.created_at || 0);
+    const dateStr = isNaN(date) ? '' : date.toLocaleDateString('ar-EG', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'});
+    const priorityLabel = n.priority === 'urgent' ? '🚨 عاجلة' :
+                          n.priority === 'idea' ? '💡 فكرة' : '💬 عادية';
+    const esc = (s) => String(s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    return `<div class="note-item ${n.priority||'normal'} ${n.done?'done':''}">
+      <div class="note-check ${n.done?'checked':''}" onclick="toggleDone('${n.id}')">${n.done?'✓':''}</div>
+      <div class="note-body">
+        <div class="note-text">${esc(n.text)}</div>
+        <div class="note-meta">
+          <span class="tag ${n.priority||'normal'}">${priorityLabel}</span>
+          ${dateStr?`<span>📅 ${dateStr}</span>`:''}
+          ${n.done && n.resolved_at ? `<span>✓ حُلّت ${new Date(n.resolved_at).toLocaleDateString('ar-EG',{day:'2-digit',month:'short'})}</span>`:''}
+        </div>
+      </div>
+      <button class="note-del" onclick="deleteNote('${n.id}')" title="حذف">×</button>
+    </div>`;
+  }).join('');
+}
+
+async function addNote() {
+  const text = document.getElementById('noteText').value.trim();
+  const priority = document.getElementById('notePriority').value;
+  if (!text) return;
+
+  const id = 'n_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const note = {
+    text,
+    priority,
+    done: false,
+    created_at: Date.now()
+  };
+  try {
+    await ref(`months/${CURRENT_MONTH}/notes/${id}`).set(note);
+    document.getElementById('noteText').value = '';
+    document.getElementById('notePriority').value = 'normal';
+    await loadNotes();
+  } catch(e) {
+    alert('خطأ في الحفظ: ' + e.message);
+  }
+}
+
+async function toggleDone(id) {
+  const n = notesCache.find(x => x.id === id);
+  if (!n) return;
+  const newDone = !n.done;
+  try {
+    await ref(`months/${CURRENT_MONTH}/notes/${id}/done`).set(newDone);
+    await ref(`months/${CURRENT_MONTH}/notes/${id}/resolved_at`).set(newDone ? Date.now() : null);
+    await loadNotes();
+  } catch(e) {
+    alert('خطأ: ' + e.message);
+  }
+}
+
+async function deleteNote(id) {
+  if (!confirm('تأكد من حذف الملاحظة؟')) return;
+  try {
+    await ref(`months/${CURRENT_MONTH}/notes/${id}`).remove();
+    await loadNotes();
+  } catch(e) {
+    alert('خطأ: ' + e.message);
+  }
+}
+
+loadNotes();
 </script>
 </body>
 </html>
