@@ -718,7 +718,7 @@ function renderKafalaRow(k) {
     <td>${statusBadge}</td>
     <td>
       ${assignBtn}
-      <button class="btn-small btn-ghost" onclick="event.stopPropagation();openEditKafala('${k.id}')">تعديل</button>
+      <button class="btn-small btn-ghost" onclick="event.stopPropagation();openEditKafala('${k.id}')" title="تعديل اسم الطفل، المنطقة، نوع الحالة، إلخ">✏️ البيانات</button>
     </td>
   </tr>`;
 }
@@ -936,21 +936,41 @@ function toggleExpand(id) {
 
 function renderFundingItem(f, kid) {
   let srcLabel = '';
-  if (f.source === 'kafeel') srcLabel = `<b>${personName(allPeople, f.kafeel_id)}</b>`;
-  else if (f.source === 'sadaqat') srcLabel = `<span class="badge badge-sadaqat">صدقات</span>`;
-  else srcLabel = `<span class="badge badge-zakat">زكاة</span>`;
+  if (f.source === 'kafeel') srcLabel = `👤 <b>${personName(allPeople, f.kafeel_id)}</b>`;
+  else if (f.source === 'sadaqat') srcLabel = `🤲 <b>صدقات</b>`;
+  else srcLabel = `💰 <b>زكاة</b>`;
 
-  return `<div class="funding-item">
-    <div>
-      ${srcLabel}
-      ${f.notes?`<div class="text-xs text-muted" style="margin-top:3px">${f.notes}</div>`:''}
-      ${f.prepaid_through?`<div class="text-xs"><span class="badge badge-prepaid">مدفوع حتى ${arabicMonth(f.prepaid_through)}</span></div>`:''}
+  const pt = f.pt_id && f.pt_id !== f.kafeel_id ? `<div class="text-xs text-muted">المحصّل: ${personName(allPeople, f.pt_id)}</div>` : '';
+  const awaiting = f.awaiting_sponsor ? `<div class="text-xs"><span class="badge" style="background:#fdf7e3;color:#6d4e00">🕒 يبحث عن كفيل</span></div>` : '';
+
+  // Only kafeel-funded entries can be swapped to another kafeel or to sadaqat-pending
+  const isKafeel = f.source === 'kafeel';
+
+  return `<div class="funding-item" style="flex-direction:column;align-items:stretch;gap:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div style="flex:1">
+        ${srcLabel}
+        ${pt}
+        ${awaiting}
+        ${f.notes?`<div class="text-xs text-muted" style="margin-top:3px">${f.notes}</div>`:''}
+        ${f.prepaid_through?`<div class="text-xs mt-xs"><span class="badge badge-prepaid">📅 مدفوع حتى ${arabicMonth(f.prepaid_through)}</span></div>`:''}
+      </div>
+      <span class="font-mono" style="font-size:16px"><b>${fmt(f.amount)}</b> ج</span>
     </div>
-    <div class="flex gap-sm">
-      <span class="font-mono"><b>${fmt(f.amount)}</b></span>
-      <button class="btn-small btn-ghost" onclick="openEditFunding('${kid}','${f.fid}')">تعديل</button>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;padding-top:6px;border-top:1px dashed var(--border-light)">
+      <button class="btn-small btn-ghost" onclick="quickEditFunding('${kid}','${f.fid}','amount')" title="تعديل المبلغ">💰 المبلغ</button>
+      ${isKafeel ? `<button class="btn-small btn-ghost" onclick="quickEditFunding('${kid}','${f.fid}','taweed')" title="تبديل الكفيل">🔁 تبديل الكفيل</button>` : ''}
+      <button class="btn-small btn-ghost" onclick="quickEditFunding('${kid}','${f.fid}','prepay')" title="تسجيل دفع مقدم">📅 دفع مقدم</button>
+      ${isKafeel ? `<button class="btn-small btn-ghost" onclick="quickEditFunding('${kid}','${f.fid}','cancel_to_pending')" title="الكفيل توقف → صدقات">🕒 توقف → صدقات</button>` : ''}
+      <button class="btn-small btn-ghost" onclick="quickEditFunding('${kid}','${f.fid}','oneoff')" title="زيادة وقتية">⚡ زيادة وقتية</button>
+      <button class="btn-small btn-ghost" style="color:var(--danger)" onclick="quickEditFunding('${kid}','${f.fid}','remove')" title="حذف">🗑️ حذف</button>
     </div>
   </div>`;
+}
+
+// Open edit modal pre-selecting the action — one-click flow
+function quickEditFunding(kid, fid, action) {
+  openEditFunding(kid, fid, action);
 }
 
 function renderPeople() {
@@ -1745,10 +1765,11 @@ async function saveAddFunding(kid) {
 }
 
 // ============= EDIT FUNDING (amount, taweed, prepaid) =============
-function openEditFunding(kid, fid) {
+function openEditFunding(kid, fid, preAction='amount') {
   const k = allKafalat[kid];
   const f = (k.funding||[]).find(x => x.fid === fid);
   if (!f) return;
+  const isKafeel = f.source === 'kafeel';
   modal(`تعديل مصدر تمويل - ${k.child}`, `
     <div style="padding:10px;background:var(--cream-deep);border-radius:6px;margin-bottom:12px" class="text-sm">
       <b>الحالي:</b> ${f.source === 'kafeel' ? personName(allPeople, f.kafeel_id) : f.source} / ${fmt(f.amount)} جنيه
@@ -1757,12 +1778,12 @@ function openEditFunding(kid, fid) {
     <div class="form-row">
       <div><label>نوع التعديل</label>
         <select id="ef_type" onchange="refreshEfForm('${kid}','${fid}')">
-          <option value="amount">💰 تعديل المبلغ</option>
-          <option value="taweed">🔁 تبديل الكفيل (تويد) ← من ${f.source==='kafeel'?personName(allPeople, f.kafeel_id):'المصدر'} لكفيل جديد</option>
-          <option value="prepay">📅 تسجيل دفع مقدم</option>
-          <option value="cancel_to_pending">🕒 الكفيل توقف → نقل للصدقات (في انتظار كفيل)</option>
-          <option value="oneoff">⚡ زيادة وقتية لشهر واحد</option>
-          <option value="remove">🗑️ حذف هذا المصدر</option>
+          <option value="amount" ${preAction==='amount'?'selected':''}>💰 تعديل المبلغ</option>
+          ${isKafeel?`<option value="taweed" ${preAction==='taweed'?'selected':''}>🔁 تبديل الكفيل (تويد) ← ${personName(allPeople, f.kafeel_id)} لكفيل جديد</option>`:''}
+          <option value="prepay" ${preAction==='prepay'?'selected':''}>📅 تسجيل دفع مقدم</option>
+          ${isKafeel?`<option value="cancel_to_pending" ${preAction==='cancel_to_pending'?'selected':''}>🕒 الكفيل توقف → نقل للصدقات (في انتظار كفيل)</option>`:''}
+          <option value="oneoff" ${preAction==='oneoff'?'selected':''}>⚡ زيادة وقتية لشهر واحد</option>
+          <option value="remove" ${preAction==='remove'?'selected':''}>🗑️ حذف هذا المصدر</option>
         </select>
       </div>
       <div><label>سبب التعديل (اختياري)</label><input id="ef_note" placeholder="سبب التغيير..."></div>
