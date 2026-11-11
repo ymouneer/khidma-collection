@@ -705,7 +705,8 @@ function renderKafalaRow(k) {
     `<span class="badge badge-active">نشطة</span>`;
 
   const assignBtn = awaitingSponsor
-    ? `<button class="btn-small btn-gold" onclick="event.stopPropagation();openAssignKafeel('${k.id}')">👤 تعيين كفيل</button>`
+    ? `<button class="btn-small btn-gold" onclick="event.stopPropagation();openAssignKafeel('${k.id}')">👤 تعيين كفيل</button>
+       <button class="btn-small btn-ghost" onclick="event.stopPropagation();allocateToSadaqat('${k.id}')" title="ثبّت التمويل من بركة الصدقات">🤲 صدقات</button>`
     : '';
 
   return `<tr class="kafala-row" style="${inactive?'opacity:0.5':''}" data-id="${k.id}" onclick="toggleExpand('${k.id}')">
@@ -723,6 +724,60 @@ function renderKafalaRow(k) {
 }
 
 // Quick action: assign a kafeel to a sadaqat-pending kafala
+// One-click: convert awaiting-sponsor entry to permanent sadaqat funding
+// Only touches the single awaiting funding entry in this kafala — nothing else.
+async function allocateToSadaqat(kid) {
+  const k = allKafalat[kid];
+  if (!k) return;
+  const pendingFunding = (k.funding||[]).find(f => f.awaiting_sponsor);
+  if (!pendingFunding) return toast('لا توجد مصدر صدقات في انتظار كفيل', 'error');
+
+  const ok = await confirmImpact({
+    title: '🤲 ثبّت التمويل على بركة الصدقات',
+    impact: [
+      `الطفل/الحالة: ${k.child || '—'}`,
+      `المبلغ: ${pendingFunding.amount} ج/شهر`,
+      `سيُلغى علم "يبحث عن كفيل" ويُثبّت المصدر كصدقات دائمة`,
+      `ستُدفع هذه الكفالة من بركة الصدقات شهرياً حتى يظهر كفيل`,
+      `يمكن التراجع من سجل التغييرات في أي وقت`
+    ]
+  });
+  if (!ok) return;
+
+  try {
+    const fullBefore = JSON.parse(JSON.stringify(k.funding || []));
+    // Build updated entry — keep everything, just drop awaiting_sponsor flag & update note
+    const newEntry = {...pendingFunding};
+    delete newEntry.awaiting_sponsor;
+    newEntry.notes = 'تمويل دائم من بركة الصدقات';
+    const updatedFunding = (k.funding||[]).map(f => f.fid === pendingFunding.fid ? newEntry : f);
+
+    await ref(`kafalat/${kid}/funding`).set(updatedFunding);
+    await ref(`kafalat/${kid}/updated_at`).set(Date.now());
+
+    // Clear month-level awaiting flag if present (so collection sees fresh state)
+    const monthPaidRef = ref(`months/${CURRENT_MONTH}/paid/${kid}`);
+    const monthPaidSnap = await monthPaidRef.once('value');
+    const monthPaid = monthPaidSnap.val();
+    if (monthPaid && monthPaid[pendingFunding.fid]?.awaiting_sponsor) {
+      await ref(`months/${CURRENT_MONTH}/paid/${kid}/${pendingFunding.fid}/awaiting_sponsor`).remove();
+    }
+
+    await auditLog('allocate_to_sadaqat', `kafalat/${kid}/funding`, fullBefore, updatedFunding, {
+      month: CURRENT_MONTH,
+      kafala: k.child || '—',
+      amount: pendingFunding.amount,
+      revertable: true, revert_action: 'restore_funding_array', revert_target: kid
+    });
+
+    toast(`✓ ${k.child||'الحالة'} — تم تثبيت التمويل على الصدقات`, 'success');
+    await load();
+  } catch(e) {
+    console.error(e);
+    toast('❌ خطأ: ' + e.message, 'error');
+  }
+}
+
 function openAssignKafeel(kid) {
   const k = allKafalat[kid];
   if (!k) return;
