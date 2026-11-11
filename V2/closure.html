@@ -338,25 +338,31 @@
     body { background: #fff !important; font-size: 11pt; }
     .report-preview, .card { box-shadow: none !important; border: none !important; padding: 0 !important; margin: 0 !important; }
     .container, .container-wide { padding: 0 !important; max-width: 100% !important; }
-    /* only show the currently-active step panel in print */
     .step-panel { display: none !important; }
     .step-panel.active { display: block !important; }
-    /* Repeat column header on every printed page */
+    /* Force colors to print (otherwise green headers show as white-on-white) */
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    /* Repeat thead on every printed page */
     thead { display: table-header-group !important; }
     tfoot { display: table-footer-group !important; }
     tr { page-break-inside: avoid; }
-    .report-preview > h2, .report-preview > .text-sm { display: none !important; }
+    .report-preview > h2, .report-preview > .text-sm,
+    .report-preview > div[class*="no-print"] { display: none !important; }
+    /* Big title row in thead (full-width) */
     .print-title { display: table-row !important; }
     .print-title th {
-      background: var(--accent) !important; color: #fff !important;
-      font-size: 14pt !important; padding: 10px !important;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
+      background: #2d5c3f !important; color: #fff !important;
+      font-size: 13pt !important; padding: 10px !important;
+      text-align: right !important;
     }
-    table th {
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
+    /* Column header row (ولي الأمر | الأساسي | الإضافي | الإجمالي) */
+    .col-head { display: table-row !important; }
+    .col-head th {
+      background: #4a7c59 !important; color: #fff !important;
+      font-weight: 700 !important; font-size: 11pt !important;
+      padding: 8px !important; border-bottom: 2px solid #2d5c3f !important;
     }
+    tbody td { padding: 6px 10px !important; border-bottom: 1px solid #e0dcd0 !important; }
   }
   .print-title { display: none; }
 </style>
@@ -550,13 +556,12 @@ function renderStep1() {
   const effective = effectiveKafalat();
   const active = Object.values(effective).filter(k => k.status === 'active');
   const byArea = {};
-  let totalBase = 0, prepaidActive = 0;
+  let totalBase = 0;
 
   active.forEach(k => {
     const mb = kafalaMonthlyBase(k, CURRENT_MONTH);
     byArea[k.area] = (byArea[k.area]||0) + mb;
     totalBase += mb;
-    if (hasAnyPrepaid(k, CURRENT_MONTH)) prepaidActive++;
   });
 
   document.getElementById('step1Stats').innerHTML = `
@@ -565,15 +570,14 @@ function renderStep1() {
       <div class="value">${active.length}</div>
     </div>
     <div class="stat">
-      <div class="label">المطلوب هذا الشهر</div>
+      <div class="label">إجمالي الصرف هذا الشهر</div>
       <div class="value">${fmt(totalBase)}</div>
-      <div class="sub">بعد استبعاد المدفوع مقدماً</div>
+      <div class="sub">كامل المبلغ الموزَّع على الأسر</div>
     </div>
     <div class="stat"><div class="label">الصف</div><div class="value">${fmt(byArea['الصف']||0)}</div></div>
     <div class="stat"><div class="label">كفر علو</div><div class="value">${fmt(byArea['كفر_علو']||0)}</div></div>
     <div class="stat"><div class="label">المعصرة</div><div class="value">${fmt(byArea['المعصرة']||0)}</div></div>
     <div class="stat"><div class="label">أماكن أخرى</div><div class="value">${fmt(byArea['أماكن_أخرى']||0)}</div></div>
-    <div class="stat"><div class="label">مدفوعة مقدماً</div><div class="value">${prepaidActive}</div></div>
     <div class="stat"><div class="label">تعديلات دائمة</div><div class="value">${monthAudit.length}</div><div class="sub">مطبّقة فوراً</div></div>
     <div class="stat"><div class="label">⚡ زيادات وقتية</div><div class="value">${pendingEdits.length}</div><div class="sub">للإقفال</div></div>
   `;
@@ -1206,7 +1210,7 @@ function renderAreaReport(area, skipScroll) {
   // regardless of whether the sponsor paid in advance or will pay later.
   // Falls back to child-name or case label when no guardian is set.
   const byGuardian = {};
-  let auditTotalActive = 0, auditInactive = 0, auditNoGuardian = 0, auditPrepaidBySponsor = 0;
+  let auditTotalActive = 0, auditInactive = 0, auditNoGuardian = 0;
 
   Object.entries(effective).forEach(([kid, k]) => {
     if (k.area !== area) return;
@@ -1225,13 +1229,10 @@ function renderAreaReport(area, skipScroll) {
     }
     if (!byGuardian[key]) byGuardian[key] = {name: label, kafalat: [], total: 0, gid: gid || key};
 
-    let anyPrepaid = false;
     (k.funding||[]).forEach(f => {
       byGuardian[key].kafalat.push({child: k.child, amount: f.amount||0});
       byGuardian[key].total += f.amount || 0;
-      if (f.prepaid_through && f.prepaid_through >= CURRENT_MONTH) anyPrepaid = true;
     });
-    if (anyPrepaid) auditPrepaidBySponsor++;
   });
 
   // Zakat distribution
@@ -1280,11 +1281,10 @@ function renderAreaReport(area, skipScroll) {
       <h2 style="color:var(--accent);margin:0 0 8px">📋 تقرير ${areaDisplay(area)} — ${arabicMonth(CURRENT_MONTH)}</h2>
 
       <div class="no-print" style="margin-bottom:14px;padding:12px 16px;background:var(--cream);border-right:3px solid var(--accent);border-radius:var(--r-sm);font-size:12.5px;line-height:1.9">
-        <b style="color:var(--accent)">🔍 تدقيق الأرقام (التقرير = مبلغ الصرف لكل حالة، بغض النظر عن تسديد الكفيل):</b><br>
+        <b style="color:var(--accent)">🔍 تدقيق الأرقام:</b><br>
         • كفالات نشطة في ${areaDisplay(area)}: <b>${auditTotalActive}</b>
         ${auditInactive ? ` · موقوفة/منتهية (غير مُضمَّنة): <b>${auditInactive}</b>` : ''}<br>
         ${auditNoGuardian ? `• حالات بدون ولي أمر (ظاهرة باسم الطفل أو نوع الحالة): <b>${auditNoGuardian}</b><br>` : ''}
-        ${auditPrepaidBySponsor ? `• كفالات سدَّد سبونسرها مقدماً (لسه بتصرف كالعادة): <b>${auditPrepaidBySponsor}</b><br>` : ''}
         • الظاهرة في التقرير: <b>${sorted.length}</b> حالة · إجمالي <b>${fmt(grandTotal + exclAmt)}</b>
       </div>
 
@@ -1307,22 +1307,22 @@ function renderAreaReport(area, skipScroll) {
       <table>
         <thead>
           <tr class="print-title"><th colspan="6">📋 تقرير ${areaDisplay(area)} — ${arabicMonth(CURRENT_MONTH)}</th></tr>
-          <tr>
+          <tr class="col-head">
             <th class="no-print" style="width:44px">استثناء</th>
             <th style="width:36px">#</th>
-            <th>ولي الأمر</th>
-            <th style="width:90px">الأساسي</th>
-            <th style="width:90px">الزكاة</th>
-            <th style="width:100px">الإجمالي</th>
+            <th>ولي الأمر / الحالة</th>
+            <th style="width:100px">المبلغ الأساسي</th>
+            <th style="width:100px">الإضافي (زكاة)</th>
+            <th style="width:110px">الإجمالي</th>
           </tr>
         </thead>
         <tbody>${rows}
-          <tr style="background:var(--accent);color:#fff;font-weight:700">
+          <tr style="background:#2d5c3f;color:#fff;font-weight:700">
             <td class="no-print"></td>
-            <td colspan="2">الإجمالي ${exclCount>0 ? '(بعد الاستثناء)' : ''}</td>
-            <td class="font-mono" style="text-align:center">${fmt(grandBase)}</td>
-            <td class="font-mono" style="text-align:center">${grandZakat?fmt(grandZakat):'—'}</td>
-            <td class="font-mono" style="text-align:center">${fmt(grandTotal)}</td>
+            <td colspan="2" style="padding:10px">الإجمالي ${exclCount>0 ? '(بعد الاستثناء)' : ''}</td>
+            <td class="font-mono" style="text-align:center;padding:10px">${fmt(grandBase)}</td>
+            <td class="font-mono" style="text-align:center;padding:10px">${grandZakat?fmt(grandZakat):'—'}</td>
+            <td class="font-mono" style="text-align:center;padding:10px">${fmt(grandTotal)}</td>
           </tr>
         </tbody>
       </table>
