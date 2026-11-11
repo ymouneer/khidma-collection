@@ -136,8 +136,13 @@
   }
 
   @media print {
-    .no-print, .excl-check, .excl-toolbar, .hero-controls { display: none !important; }
+    @page { margin: 12mm; }
+    .no-print, .excl-check, .excl-toolbar, .hero-controls, .topbar,
+    .report-grid, .cmp-months, .month-row, .mode-tabs { display: none !important; }
     .guardian-group-row.excluded { display: none !important; }
+    body { background: #fff !important; }
+    .report-preview, .card { box-shadow: none !important; border: none !important; }
+    .container { padding: 0 !important; max-width: 100% !important; }
   }
 </style>
 </head>
@@ -179,7 +184,7 @@
 
   <!-- SINGLE MODE: tiles + preview -->
   <div id="singleMode">
-    <div id="tileGrid" class="report-grid"></div>
+    <div id="tileGrid" class="report-grid no-print"></div>
     <div id="previewArea"></div>
   </div>
 
@@ -347,16 +352,38 @@ function toggleReportExclude(area, gid) {
   const s = getExcluded(selectedMonth, area);
   if (s.has(gid)) s.delete(gid); else s.add(gid);
   setExcluded(selectedMonth, area, s);
-  renderAreaReport(area);
+  renderAreaReport(area, true); // skip scroll
   renderTiles();
 }
 function clearReportExcluded(area) {
   setExcluded(selectedMonth, area, new Set());
-  renderAreaReport(area);
+  renderAreaReport(area, true);
   renderTiles();
 }
 
-function renderAreaReport(area) {
+function normArabic(s) {
+  return String(s||'')
+    .replace(/[ً-ْ]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .toLowerCase().trim();
+}
+function filterReportByName(query) {
+  const q = normArabic(query);
+  const groups = {};
+  document.querySelectorAll('#previewArea .guardian-group-row[data-gname]').forEach(r => {
+    const name = r.dataset.gname;
+    if (!groups[name]) groups[name] = [];
+    groups[name].push(r);
+  });
+  Object.entries(groups).forEach(([name, rows]) => {
+    const show = q === '' || normArabic(name).includes(q);
+    rows.forEach(r => r.style.display = show ? '' : 'none');
+  });
+}
+
+function renderAreaReport(area, skipScroll) {
   const data = allMonthsData[selectedMonth] || {};
   const snapshot = data.snapshot?.kafalat || liveKafalat;
   const people = data.snapshot?.people || livePeople;
@@ -394,17 +421,20 @@ function renderAreaReport(area) {
   const sorted = Object.entries(byGuardian).sort((a,b) => a[0].localeCompare(b[0]));
 
   let rows = '', grand = 0, exclCount = 0, exclAmt = 0;
+  let serial = 0;
   sorted.forEach(([gname, data]) => {
     const isExcl = excluded.has(data.gid);
     if (isExcl) { exclCount++; exclAmt += data.total; }
+    else serial++;
     const kids = data.kafalat;
     const rowCount = kids.length + (data.zakat ? 1 : 0);
-    const checkTd = `<td rowspan="${rowCount+1}" style="text-align:center;vertical-align:middle">
+    const checkTd = `<td rowspan="${rowCount+1}" class="no-print" style="text-align:center;vertical-align:middle">
       <span class="excl-check ${isExcl?'checked':''}" onclick="event.stopPropagation();toggleReportExclude('${area}','${data.gid}')">${isExcl?'✗':''}</span>
     </td>`;
+    const numTd = `<td rowspan="${rowCount+1}" style="text-align:center;vertical-align:middle;font-weight:700;color:var(--muted);width:36px">${isExcl?'—':serial}</td>`;
     kids.forEach((k, i) => {
-      rows += `<tr class="guardian-group-row ${isExcl?'excluded':''}">
-        ${i===0 ? checkTd : ''}
+      rows += `<tr class="guardian-group-row ${isExcl?'excluded':''}" data-gname="${gname}">
+        ${i===0 ? checkTd + numTd : ''}
         ${i===0?`<td rowspan="${rowCount}" style="font-weight:600;vertical-align:middle">${gname}</td>`:''}
         <td>${k.child||'—'}</td>
         <td>${k.kafeel}</td>
@@ -413,16 +443,18 @@ function renderAreaReport(area) {
       if (!isExcl) grand += k.amount;
     });
     if (data.zakat) {
-      rows += `<tr class="guardian-group-row ${isExcl?'excluded':''}">
+      rows += `<tr class="guardian-group-row ${isExcl?'excluded':''}" data-gname="${gname}">
         <td>—</td><td><i>زكاة الشهر</i></td><td class="font-mono">${fmt(data.zakat)}</td>
       </tr>`;
       if (!isExcl) grand += data.zakat;
     }
-    rows += `<tr class="guardian-group-row ${isExcl?'excluded':''}" style="background:var(--cream-deep);font-weight:700">
+    rows += `<tr class="guardian-group-row ${isExcl?'excluded':''}" data-gname="${gname}" style="background:var(--cream-deep);font-weight:700">
       <td colspan="3" style="text-align:left">إجمالي ${gname}</td>
       <td class="font-mono">${fmt(data.total)}</td>
     </tr>`;
   });
+
+  const prevQuery = document.getElementById('exclSearch_'+area)?.value || '';
 
   document.getElementById('previewArea').innerHTML = `
     <div class="report-preview">
@@ -431,18 +463,25 @@ function renderAreaReport(area) {
         عدد الأولياء الظاهر: <b>${sorted.length - exclCount}</b> من <b>${sorted.length}</b>
       </div>
       <div class="excl-toolbar no-print">
-        <span>💡 اضغط مربع الاستثناء جنب أي ولي أمر لإخفائه.</span>
-        <div class="spacer"></div>
+        <input type="text" id="exclSearch_${area}" placeholder="🔍 فلتر بالاسم..." value="${prevQuery}"
+          oninput="filterReportByName(this.value)"
+          style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;min-width:200px">
         <span><b style="color:#d9534f">${exclCount}</b> مُستثنى (${fmt(exclAmt)} ج)</span>
+        <div class="spacer"></div>
         ${exclCount>0 ? `<button class="btn-small btn-ghost" onclick="clearReportExcluded('${area}')">↻ إعادة الكل</button>` : ''}
+      </div>
+      <div class="text-xs text-muted" style="margin-bottom:8px">
+        💡 اكتب جزء من الاسم للفلترة السريعة، ثم اضغط مربع الاستثناء جنب كل واحد لإخفائه من التقرير.
       </div>
       <table>
         <thead><tr>
-          <th style="width:44px">استثناء</th>
+          <th class="no-print" style="width:44px">استثناء</th>
+          <th style="width:36px">#</th>
           <th>ولي الأمر</th><th>الطفل</th><th>الكفيل</th><th>المبلغ</th>
         </tr></thead>
         <tbody>${rows}
           <tr style="background:var(--accent);color:#fff;font-weight:700">
+            <td class="no-print"></td>
             <td colspan="4">الإجمالي ${exclCount>0 ? '(بعد الاستثناء)' : ''}</td>
             <td class="font-mono">${fmt(grand)}</td>
           </tr>
@@ -454,7 +493,10 @@ function renderAreaReport(area) {
       </div>
     </div>
   `;
-  setTimeout(() => document.getElementById('previewArea').scrollIntoView({behavior:'smooth'}), 50);
+  if (prevQuery) filterReportByName(prevQuery);
+  if (!skipScroll) {
+    setTimeout(() => document.getElementById('previewArea').scrollIntoView({behavior:'smooth'}), 50);
+  }
 }
 
 function renderNashwaMsg() {
@@ -485,12 +527,25 @@ function renderNashwaMsg() {
   const yousTotal = Object.values(state.youssef_by_area||{}).reduce((a,b)=>a+b,0);
   const nashTotal = Math.max(0, grandAdj - yousTotal);
 
+  // Per-area breakdown: who pays what (based on step 5 "خطة التحويل")
+  const yByA = state.youssef_by_area || {};
   let areaLines = '';
   ['الصف','كفر_علو','المعصرة','أماكن_أخرى'].forEach(a => {
-    if (adj[a]) areaLines += `• ${areaDisplay(a)}: ${fmt(adj[a])}\n`;
+    if (!adj[a]) return;
+    const yShare = Math.min(yByA[a]||0, adj[a]);
+    const nShare = Math.max(0, adj[a] - yShare);
+    let line = `• *${areaDisplay(a)}*: ${fmt(adj[a])}`;
+    if (yShare > 0 && nShare > 0) {
+      line += `\n   ↳ نشوى: ${fmt(nShare)} · يوسف: ${fmt(yShare)}`;
+    } else if (yShare > 0) {
+      line += `\n   ↳ يوسف: ${fmt(yShare)}`;
+    } else {
+      line += `\n   ↳ نشوى: ${fmt(nShare)}`;
+    }
+    areaLines += line + '\n';
   });
   const kafrFee = state.include_fee
-    ? `+ ${fmt(Math.round((adj['كفر_علو']||0) * 0.01))} رسوم ١٪ كفر علو\n` : '';
+    ? `\n+ ${fmt(Math.round((adj['كفر_علو']||0) * 0.01))} رسوم ١٪ كفر علو\n` : '';
   const zakatUsed = Object.values(state.zakat_distribution||{}).reduce((a,b)=>a+b,0);
   const zakatRecipients = Object.keys(state.zakat_distribution||{}).length;
 
@@ -501,13 +556,13 @@ function renderNashwaMsg() {
 *خطة التحويل* 📊
 ${areaLines}${kafrFee}
 الإجمالي الكلي: *${fmt(grandAdj)}*
-نصيبك: *${fmt(nashTotal)}*
-نصيبي: *${fmt(yousTotal)}*
+نصيب نشوى: *${fmt(nashTotal)}*
+نصيب يوسف: *${fmt(yousTotal)}*
 
 ━━━━━━━━━━━━━━
 *بركة الصدقات* 🤲
 المدخلات الثابتة: ${fmt(state.fixed_sadaqat||4550)}
-من مبلغك للصدقات: ${fmt(state.sadaqat_to_pool||0)}
+من مبلغ نشوى للصدقات: ${fmt(state.sadaqat_to_pool||0)}
 
 *الزكاة* 💰
 المتاح للتوزيع: ${fmt(state.zakat_remaining||0)}
