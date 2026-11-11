@@ -243,7 +243,7 @@ if (!checkAuth()) throw new Error('auth');
 initFirebase();
 
 let CURRENT_MONTH = getWorkingMonth();
-let allKafalat = {}, allPeople = {}, config = {}, pendingEdits = [];
+let allKafalat = {}, allPeople = {}, config = {}, pendingEdits = [], monthAudit = [];
 let state = {
   nashwa_total: 0,
   fixed_sadaqat: 4550,
@@ -264,6 +264,23 @@ async function load() {
   [allPeople, allKafalat, config] = await Promise.all([fetchPeople(), fetchKafalat(), fetchConfig()]);
   const eSnap = await ref(`months/${CURRENT_MONTH}/edits`).once('value');
   pendingEdits = Object.entries(eSnap.val() || {}).map(([id,e]) => ({id,...e}));
+
+  // Load audit entries for immediate-apply changes made in current month's window
+  const [y, m] = CURRENT_MONTH.split('-').map(Number);
+  const monthStart = new Date(y, m-1, 1).getTime();
+  const monthEnd = new Date(y, m, 1).getTime();
+  const aSnap = await ref('audit').orderByChild('ts').startAt(monthStart).endAt(monthEnd).once('value');
+  const auditVal = aSnap.val() || {};
+  // Also pull entries explicitly tagged with this month (e.g. ts in prev month but affecting this month)
+  monthAudit = Object.entries(auditVal)
+    .map(([id, a]) => ({id, ...a}))
+    .filter(a => {
+      // Keep only changes that affect kafalat / funding / people, not system noise
+      const sysActions = ['save_draft', 'autosave'];
+      if (sysActions.includes(a.action)) return false;
+      return true;
+    })
+    .sort((a, b) => (b.ts||0) - (a.ts||0));
   const sSnap = await ref(`months/${CURRENT_MONTH}/closure_state`).once('value');
   if (sSnap.exists()) state = {...state, ...sSnap.val()};
 
@@ -415,21 +432,95 @@ function renderStep1() {
     <div class="stat"><div class="label">المعصرة</div><div class="value">${fmt(byArea['المعصرة']||0)}</div></div>
     <div class="stat"><div class="label">أماكن أخرى</div><div class="value">${fmt(byArea['أماكن_أخرى']||0)}</div></div>
     <div class="stat"><div class="label">مدفوعة مقدماً</div><div class="value">${prepaidActive}</div></div>
-    <div class="stat"><div class="label">تعديلات</div><div class="value">${pendingEdits.length}</div></div>
+    <div class="stat"><div class="label">تعديلات دائمة</div><div class="value">${monthAudit.length}</div><div class="sub">مطبّقة فوراً</div></div>
+    <div class="stat"><div class="label">⚡ زيادات وقتية</div><div class="value">${pendingEdits.length}</div><div class="sub">للإقفال</div></div>
   `;
 
   const edits = document.getElementById('step1Edits');
-  if (pendingEdits.length === 0) {
+  const total = monthAudit.length + pendingEdits.length;
+
+  if (total === 0) {
     edits.innerHTML = '<div class="text-muted" style="padding:30px;text-align:center">لا توجد تعديلات هذا الشهر</div>';
-  } else {
-    edits.innerHTML = `<table><thead><tr><th>النوع</th><th>الهدف</th><th>التفاصيل</th><th>الوقت</th></tr></thead><tbody>
-      ${pendingEdits.map(e => `<tr>
-        <td><span class="badge">${e.type}</span></td>
-        <td>${e.target_label||'—'}</td>
-        <td class="text-sm text-muted">${e.description||''}</td>
-        <td class="text-xs text-muted">${new Date(e.ts).toLocaleString('ar-EG')}</td>
-      </tr>`).join('')}</tbody></table>`;
+    return;
   }
+
+  // Action labels in Arabic
+  const actionLabels = {
+    kafala_new: '➕ حالة جديدة',
+    kafala_update: '✏️ تعديل بيانات',
+    kafala_delete: '🗑️ حذف كفالة',
+    funding_update: '💰 تعديل تمويل',
+    funding_add: '➕ مصدر تمويل',
+    funding_remove: '➖ حذف مصدر',
+    assign_kafeel_from_pending: '👤 تعيين كفيل',
+    allocate_to_sadaqat: '🤲 تثبيت على الصدقات',
+    person_new: '👤 شخص جديد',
+    person_update: '✏️ تعديل شخص',
+    person_delete: '🗑️ حذف شخص',
+    revert: '⟲ تراجع'
+  };
+
+  const describeAudit = (a) => {
+    // Extract target label from path or metadata
+    let target = '—';
+    const m = a.path && a.path.match(/kafalat\/(k_[a-f0-9_]+)/);
+    if (m && allKafalat[m[1]]) target = allKafalat[m[1]].child || '—';
+    else if (a.path && a.path.startsWith('people/')) {
+      const pid = a.path.split('/')[1];
+      target = allPeople[pid]?.name || pid;
+    }
+    // Build short description from before/after diff
+    let desc = '';
+    if (a.action === 'funding_update' && a.before && a.after) {
+      const parts = [];
+      // Try to summarize
+      if (typeof a.after === 'object' && a.after.amount !== undefined) parts.push(`المبلغ: ${a.after.amount}`);
+      desc = parts.join(' · ') || 'تعديل';
+    } else if (a.action === 'assign_kafeel_from_pending' && a.kafeel_assigned) {
+      desc = `كفيل: ${a.kafeel_assigned} · ${a.amount||''} ج`;
+    } else if (a.action === 'allocate_to_sadaqat') {
+      desc = `${a.amount||''} ج → بركة الصدقات`;
+    } else if (a.action === 'kafala_new' && a.after) {
+      desc = `${a.after.area || ''} · ${a.after.case_type || ''}`.trim();
+    }
+    return {target, desc};
+  };
+
+  // Merge both lists, sorted by time desc
+  const merged = [
+    ...monthAudit.map(a => ({
+      kind: 'applied',
+      ts: a.ts,
+      label: actionLabels[a.action] || a.action,
+      ...describeAudit(a),
+      raw: a
+    })),
+    ...pendingEdits.map(e => ({
+      kind: 'pending',
+      ts: e.ts,
+      label: `⚡ ${e.type || 'زيادة وقتية'}`,
+      target: e.target_label || '—',
+      desc: e.description || ''
+    }))
+  ].sort((a, b) => (b.ts||0) - (a.ts||0));
+
+  edits.innerHTML = `
+    <div style="display:flex;gap:10px;margin-bottom:10px;font-size:12px">
+      <span class="badge badge-success">${monthAudit.length} مطبّقة فوراً</span>
+      <span class="badge" style="background:#fdf7e3;color:#6d4e00">${pendingEdits.length} زيادات وقتية للإقفال</span>
+    </div>
+    <table>
+      <thead><tr><th>النوع</th><th>الحالة</th><th>التفاصيل</th><th>الوقت</th></tr></thead>
+      <tbody>
+        ${merged.map(x => `<tr style="${x.kind==='pending'?'background:#fdf7e3':''}">
+          <td><span class="badge">${x.label}</span></td>
+          <td><b>${x.target}</b></td>
+          <td class="text-sm text-muted">${x.desc}</td>
+          <td class="text-xs text-muted">${x.ts ? new Date(x.ts).toLocaleString('ar-EG') : ''}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  `;
 }
 
 function renderStep3() {
@@ -726,7 +817,7 @@ function renderStep6() {
     </tbody></table>
     <div class="mt text-sm text-muted">
       <div>• الشهر: <b>${arabicMonth(CURRENT_MONTH)}</b></div>
-      <div>• تعديلات مطبّقة: <b>${pendingEdits.length}</b></div>
+      <div>• تعديلات دائمة فوراً: <b>${monthAudit.length}</b> · زيادات وقتية للإقفال: <b>${pendingEdits.length}</b></div>
       <div>• من مبلغ نشوى للصدقات: <b>${fmt(state.sadaqat_to_pool||0)}</b></div>
       <div>• الزكاة الموزعة: <b>${fmt(zakatUsed)}</b> على <b>${Object.keys(state.zakat_distribution||{}).length}</b> أم</div>
     </div>
