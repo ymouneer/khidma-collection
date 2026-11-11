@@ -102,10 +102,53 @@
   .pt-chevron { color: var(--muted-light); transition: transform var(--t-fast); font-size: 10px; }
   .pt-card.expanded .pt-chevron { transform: rotate(180deg); }
 
-  /* SINGLE mode (PT is own only kafeel): row acts as kafeel directly */
-  .pt-card.single .pt-chevron { display: none; }
-  .pt-card.single .pt-header { cursor: default; }
-  .pt-card.single .pt-header:hover { background: #fff; }
+  /* UNIFIED mode: PT = only kafeel, single row with everything inline */
+  .pt-card.unified .unified-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 16px;
+  }
+  .check-btn {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--cream-deep); border: 2px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 14px; color: var(--muted);
+    transition: all var(--t-fast); font-family: inherit;
+    padding: 0; flex-shrink: 0;
+  }
+  .check-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--cream); }
+  .check-btn.paid { background: var(--success); border-color: var(--success); color: #fff; }
+  .check-btn.unpaid { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .check-btn:disabled { opacity: 0.7; cursor: default; background: var(--info); border-color: var(--info); color: #fff; }
+
+  .unified-info { min-width: 0; }
+  .unified-name { font-weight: 600; font-size: 14px; }
+  .unified-sub { font-size: 11px; opacity: 0.6; margin-right: 4px; }
+  .unified-detail { font-size: 11.5px; color: var(--muted); margin-top: 2px; word-break: break-word; }
+  .unified-amount { font-size: 13.5px; color: var(--accent); font-feature-settings: "tnum"; white-space: nowrap; }
+  .unified-actions { display: flex; gap: 6px; align-items: center; }
+  .prepaid-select {
+    padding: 5px 10px; font-size: 11.5px; width: auto; min-width: 110px;
+    border: 1px solid var(--border); border-radius: 6px; background: #fff;
+    font-family: inherit;
+  }
+  .prepaid-select:focus { border-color: var(--accent); }
+  .notes-btn {
+    background: transparent; border: none; cursor: pointer;
+    font-size: 15px; padding: 4px 8px; color: var(--muted-light);
+    transition: all var(--t-fast);
+  }
+  .notes-btn:hover { color: var(--accent); background: var(--cream); border-radius: 6px; }
+  .notes-btn.active { color: var(--gold); }
+  .unified-notes { display: none; padding: 0 16px 14px; }
+  .unified-notes textarea {
+    width: 100%; min-height: 50px; padding: 8px 10px;
+    font-size: 12px; border: 1px solid var(--border); border-radius: 6px;
+    resize: vertical; font-family: inherit;
+  }
+  .pt-card.notes-open .unified-notes { display: block; }
 
   .pt-body { display: none; padding: 0 16px 14px; border-top: 1px solid var(--border-light); background: var(--cream); }
   .pt-card.expanded .pt-body { display: block; }
@@ -166,10 +209,16 @@
 
   .kafeel-row { display: grid; grid-template-columns: auto 1fr auto auto auto; column-gap: 10px; row-gap: 0; align-items: center; }
   .kafeel-info { grid-column: 2; }
-  .kafeel-check { grid-column: 1; }
-  .inline-prepaid { grid-column: 3; }
+  .prepaid-select { grid-column: 3; }
   .kafeel-amount { grid-column: 4; }
-  .kafeel-expand-btn { grid-column: 5; }
+  .notes-btn { grid-column: 5; }
+  .kafeel-notes-box { display: none; grid-column: 1 / -1; padding: 8px 0 0; }
+  .kafeel-row.notes-open .kafeel-notes-box { display: block; }
+  .kafeel-notes-box textarea {
+    width: 100%; min-height: 50px; padding: 6px 10px;
+    font-size: 12px; border: 1px solid var(--border); border-radius: 6px;
+    resize: vertical; font-family: inherit;
+  }
 
   /* Cloud status */
   .cloud-status {
@@ -544,25 +593,13 @@ function renderPt(pt) {
   const singleMode = pt.is_single;
   const collectorBadge = `<span class="pt-sub">${pt.collector === 'youssef' ? '🧑‍💼 يوسف' : '👩 نشوى'}${singleMode ? '' : ` • ${pt.kafeel_list.length} كفيل`}</span>`;
 
-  // SINGLE mode: PT is own only kafeel → show directly as kafeel row
+  // SINGLE mode: PT is own only kafeel → the PT row IS the kafeel row with everything inline
   if (singleMode) {
     const k = pt.kafeel_list[0];
-    return `<div class="pt-card single ${st === 'paid' ? '' : ''}" data-pt="${pt.pt_id}">
-      <div class="pt-header">
-        <div class="pt-indicator ${st}"></div>
-        <div class="pt-name">
-          ${pt.name}
-          ${collectorBadge}
-        </div>
-        <div class="pt-amount"><b>${fmt(pt.total)}</b> جنيه</div>
-      </div>
-      <div class="pt-body" style="display:block;border-top:0;background:#fff;padding-top:0">
-        ${renderKafeelRow(pt.pt_id, k, true)}
-      </div>
-    </div>`;
+    return renderUnifiedRow(pt, k);
   }
 
-  // NESTED mode
+  // NESTED mode — collapsible header + kafeel rows inside
   return `<div class="pt-card" data-pt="${pt.pt_id}">
     <div class="pt-header" onclick="togglePt('${pt.pt_id}')">
       <div class="pt-indicator ${st}"></div>
@@ -577,6 +614,66 @@ function renderPt(pt) {
       ${pt.kafeel_list.map(k => renderKafeelRow(pt.pt_id, k, false)).join('')}
     </div>
   </div>`;
+}
+
+// Single unified row for PTs who are their own only kafeel — no nesting, no duplication
+function renderUnifiedRow(pt, kafeel) {
+  const status = getKafeelStatus(pt.pt_id, kafeel.kafeel_id, kafeel);
+  const prepaid = isKafeelPrepaid(kafeel);
+
+  const children = kafeel.kafalat
+    .map(({kafala}) => kafala.child)
+    .filter(c => c && c !== 'nan' && c !== 'NaN');
+  const uniqueChildren = [...new Set(children)];
+  const details = uniqueChildren.join('، ');
+
+  let checkClass = '', checkIcon = '';
+  if (prepaid) { checkClass = 'paid'; checkIcon = '📅'; }
+  else if (status === 'paid') { checkClass = 'paid'; checkIcon = '✓'; }
+  else if (status === 'unpaid') { checkClass = 'unpaid'; checkIcon = '✗'; }
+
+  const [y, m] = CURRENT_MONTH.split('-').map(Number);
+  let prepaidOpts = `<option value="">— الشهر الحالي —</option>`;
+  for (let i = 1; i <= 13; i++) {
+    const d = new Date(y, m - 1 + i, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const sel = kafeel.prepaid_through === ym ? 'selected' : '';
+    prepaidOpts += `<option value="${ym}" ${sel}>${arabicMonth(ym)}</option>`;
+  }
+
+  const noteVal = (state[pt.pt_id] && state[pt.pt_id].kafeel_payments && state[pt.pt_id].kafeel_payments[kafeel.kafeel_id] && state[pt.pt_id].kafeel_payments[kafeel.kafeel_id].note) || '';
+  const hasNote = noteVal.length > 0;
+  const detailLine = prepaid
+    ? `مدفوع حتى ${arabicMonth(kafeel.prepaid_through)}${details ? ` · ${details}` : ''}`
+    : details;
+
+  const collectorIcon = pt.collector === 'youssef' ? '🧑‍💼' : '👩';
+
+  return `<div class="pt-card unified" data-pt="${pt.pt_id}">
+    <div class="unified-row">
+      <button class="check-btn ${checkClass}" onclick="toggleKafeel('${pt.pt_id}','${kafeel.kafeel_id}')" ${prepaid?'disabled title="مدفوع مقدماً"':''}>
+        ${checkIcon || '○'}
+      </button>
+      <div class="unified-info">
+        <div class="unified-name">${pt.name} <span class="unified-sub">${collectorIcon}</span></div>
+        ${detailLine ? `<div class="unified-detail">${detailLine}</div>` : ''}
+      </div>
+      <div class="unified-amount"><b>${fmt(kafeel.amount)}</b> جنيه</div>
+      <div class="unified-actions">
+        <select class="prepaid-select" onchange="setPrepaidInline('${pt.pt_id}','${kafeel.kafeel_id}', this.value)" title="دفع مقدماً حتى">
+          ${prepaidOpts}
+        </select>
+        <button class="notes-btn ${hasNote?'active':''}" onclick="toggleUnifiedNotes(this)" title="ملاحظات">${hasNote?'📝':'📄'}</button>
+      </div>
+    </div>
+    <div class="unified-notes">
+      <textarea placeholder="ملاحظات..." oninput="updateKafeelNote('${pt.pt_id}','${kafeel.kafeel_id}', this.value)">${noteVal}</textarea>
+    </div>
+  </div>`;
+}
+
+function toggleUnifiedNotes(btn) {
+  btn.closest('.pt-card').classList.toggle('notes-open');
 }
 
 function renderKafeelRow(ptId, kafeel, isSingle) {
@@ -615,21 +712,18 @@ function renderKafeelRow(ptId, kafeel, isSingle) {
     : (details || (isSingle ? '' : 'بدون تفاصيل'));
 
   return `<div class="kafeel-row" data-kafeel="${kafeel.kafeel_id}">
-    <div class="kafeel-check ${checkClass}" onclick="toggleKafeel('${ptId}','${kafeel.kafeel_id}')"${prepaid ? ' style="cursor:default" title="مدفوع مقدماً"' : ''}>
-      ${checkIcon}
-    </div>
+    <button class="check-btn ${checkClass}" onclick="toggleKafeel('${ptId}','${kafeel.kafeel_id}')"${prepaid ? ' disabled title="مدفوع مقدماً"' : ''}>
+      ${checkIcon || '○'}
+    </button>
     <div class="kafeel-info">
-      <div class="kafeel-name">${isSingle ? '' : name}</div>
+      <div class="kafeel-name">${name}</div>
       ${detailLine ? `<div class="kafeel-detail">${detailLine}</div>` : ''}
     </div>
-    <div class="inline-prepaid" title="اختر الشهر اللي دفع ليه مقدماً">
-      <span class="inline-prepaid-label">📅</span>
-      <select onchange="setPrepaidInline('${ptId}','${kafeel.kafeel_id}', this.value)" ${prepaid ? '' : ''}>
-        ${prepaidOpts}
-      </select>
-    </div>
+    <select class="prepaid-select" onchange="setPrepaidInline('${ptId}','${kafeel.kafeel_id}', this.value)" title="دفع مقدماً حتى">
+      ${prepaidOpts}
+    </select>
     <div class="kafeel-amount">${fmt(kafeel.amount)}</div>
-    <button class="kafeel-expand-btn ${hasNote ? 'active' : ''}" onclick="toggleNotes(this)" title="ملاحظات">${hasNote ? '📝' : '📄'}</button>
+    <button class="notes-btn ${hasNote ? 'active' : ''}" onclick="toggleNotes(this)" title="ملاحظات">${hasNote ? '📝' : '📄'}</button>
     <div class="kafeel-notes-box">
       <textarea placeholder="ملاحظات لهذا الكفيل..." oninput="updateKafeelNote('${ptId}','${kafeel.kafeel_id}', this.value)">${noteVal}</textarea>
     </div>
