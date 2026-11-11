@@ -1,0 +1,28 @@
+{
+  "rules": {
+    "nashwa_collection": {
+      ".read": true,
+      ".write": true
+    },
+    "khidma": {
+      ".read": true,
+      ".write": true,
+      "kafalat": {
+        ".indexOn": ["area", "guardian"]
+      }
+    },
+    "khidma_v2": {
+      ".read": true,
+      ".write": true,
+      "kafalat": {
+        ".indexOn": ["area", "status"]
+      },
+      "people": {
+        ".indexOn": ["name"]
+      },
+      "audit": {
+        ".indexOn": ["ts"]
+      }
+    }
+  }
+}
