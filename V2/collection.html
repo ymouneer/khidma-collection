@@ -330,6 +330,10 @@
   </div>
   <div class="search-hint">💡 البحث يشمل: اسم المحصّل، اسم الكفيل، اسم الطفل، اسم ولي الأمر</div>
 
+  <div style="display:flex;justify-content:flex-end;margin:8px 0">
+    <button class="fc" onclick="exportCollectionFiltered()" style="background:var(--gold);color:#fff;border-color:var(--gold)">📥 تصدير النتائج CSV</button>
+  </div>
+
   <div class="pt-list" id="ptList" style="margin-top:14px"></div>
 
   <div style="height: 80px"></div>
@@ -572,6 +576,71 @@ function renderList() {
   // Show submit if any paid
   const anyPaid = Object.values(state).some(s => (s||{}).overall_status === 'paid' || (s||{}).overall_status === 'partial');
   if (anyPaid) document.getElementById('submitBtn').classList.add('show');
+}
+
+// Export filtered collection view as CSV (per-kafeel rows)
+function exportCollectionFiltered() {
+  const q = document.getElementById('search').value.trim();
+  let pts = getPTData();
+  if (collectorFilter) pts = pts.filter(pt => pt.collector === collectorFilter);
+  if (statusFilter !== 'all') pts = pts.filter(p => getPtStatus(p) === statusFilter);
+  if (q) pts = pts.filter(pt => ptMatchesSearch(pt, q));
+
+  if (!pts.length) return toast('لا نتائج للتصدير', 'error');
+
+  const rows = [['المحصّل','PT','الكفيل','الطفل','ولي الأمر','المنطقة','المبلغ','الحالة','مدفوع مقدماً حتى','ملاحظات']];
+  let total = 0, paid = 0;
+
+  pts.forEach(pt => {
+    (pt.kafeel_list||[]).forEach(k => {
+      const st = isKafeelPrepaid(k) ? 'مقدماً' :
+                 getKafeelStatus(pt.pt_id, k.kafeel_id, k) === 'paid' ? 'مدفوع' : 'غير مدفوع';
+      total += k.amount || 0;
+      if (st !== 'غير مدفوع') paid += k.amount || 0;
+      rows.push([
+        pt.collector === 'youssef' ? 'يوسف' : 'نشوى',
+        pt.pt_name || '',
+        k.kafeel_name || '',
+        k.child_name || '',
+        k.guardian_name || '',
+        (k.area||'').replace(/_/g,' '),
+        k.amount || 0,
+        st,
+        k.prepaid_through || '',
+        k.notes || ''
+      ]);
+    });
+  });
+
+  rows.push([]);
+  rows.push(['','','','','','المجموع:', total, '', '', '']);
+  rows.push(['','','','','','المحصّل:', paid, '', '', '']);
+  rows.push(['','','','','','المتبقي:', total - paid, '', '', '']);
+
+  const csv = '﻿' + rows.map(r =>
+    r.map(c => {
+      const s = String(c ?? '');
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+    }).join(',')
+  ).join('\n');
+
+  const label = [
+    collectorFilter ? (collectorFilter === 'youssef' ? 'يوسف' : 'نشوى') : 'الكل',
+    statusFilter !== 'all' ? statusFilter : '',
+    q ? 'بحث-' + q : ''
+  ].filter(x=>x).join('_');
+
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `تحصيل_${label}_${CURRENT_MONTH}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  toast(`✓ تم تصدير ${rows.length - 5} صف`, 'success');
 }
 
 function renderPt(pt) {

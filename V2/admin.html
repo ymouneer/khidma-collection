@@ -105,7 +105,28 @@
           <option value="not_prepaid">غير مدفوعة مقدماً</option>
           <option value="partial_prepaid">مدفوعة جزئياً</option>
         </select>
+        <select id="filterSponsorship" onchange="render()">
+          <option value="">كل الحالات</option>
+          <option value="awaiting">🕒 يبحث عن كفيل</option>
+          <option value="sadaqat_only">🤲 صدقات فقط</option>
+          <option value="has_kafeel">👤 عنده كفيل</option>
+        </select>
+        <select id="filterKafeel" onchange="render()">
+          <option value="">👤 كل الكفلاء</option>
+        </select>
+        <select id="filterPT" onchange="render()">
+          <option value="">🧑‍💼 كل الـ PTs</option>
+        </select>
+        <select id="filterGuardian" onchange="render()">
+          <option value="">👨‍👩‍👧 كل أولياء الأمور</option>
+        </select>
+        <select id="filterCollector" onchange="render()">
+          <option value="">💰 كل المحصلين</option>
+          <option value="youssef">🧑‍💼 يوسف</option>
+          <option value="nashwa">👩 نشوى</option>
+        </select>
         <div class="spacer"></div>
+        <button class="btn-gold" onclick="exportFiltered()">📥 تصدير CSV</button>
         <button onclick="openNewKafala()">+ كفالة جديدة</button>
         <span class="info" id="countInfo">—</span>
       </div>
@@ -212,10 +233,159 @@ async function load() {
     };
   });
 
+  populateFilterDropdowns();
   renderStats();
   render();
   renderPeople();
   renderEdits();
+}
+
+let lastFilteredItems = []; // cache for export
+
+function populateFilterDropdowns() {
+  // Collect distinct kafeel/pt/guardian ids actually referenced by active kafalat
+  const kafeelIds = new Set();
+  const ptIds = new Set();
+  const guardianIds = new Set();
+  Object.values(allKafalat).forEach(k => {
+    if (k.guardian_id) guardianIds.add(k.guardian_id);
+    (k.funding||[]).forEach(f => {
+      if (f.kafeel_id) kafeelIds.add(f.kafeel_id);
+      if (f.pt_id) ptIds.add(f.pt_id);
+    });
+  });
+
+  const toOpt = (id) => {
+    const p = allPeople[id];
+    if (!p) return '';
+    return `<option value="${id}">${p.name}</option>`;
+  };
+  const sortByName = (a, b) => {
+    const na = (allPeople[a]||{}).name||'';
+    const nb = (allPeople[b]||{}).name||'';
+    return na.localeCompare(nb, 'ar');
+  };
+
+  const kSel = document.getElementById('filterKafeel');
+  kSel.innerHTML = '<option value="">👤 كل الكفلاء</option>' +
+    [...kafeelIds].sort(sortByName).map(toOpt).join('');
+
+  const pSel = document.getElementById('filterPT');
+  pSel.innerHTML = '<option value="">🧑‍💼 كل الـ PTs</option>' +
+    [...ptIds].sort(sortByName).map(toOpt).join('');
+
+  const gSel = document.getElementById('filterGuardian');
+  gSel.innerHTML = '<option value="">👨‍👩‍👧 كل أولياء الأمور</option>' +
+    [...guardianIds].sort(sortByName).map(toOpt).join('');
+}
+
+function exportFiltered() {
+  if (!lastFilteredItems.length) { toast('لا توجد نتائج للتصدير', 'error'); return; }
+
+  // Determine export description
+  const parts = [];
+  const kf = document.getElementById('filterKafeel');
+  const pf = document.getElementById('filterPT');
+  const gf = document.getElementById('filterGuardian');
+  const cf = document.getElementById('filterCollector');
+  const af = document.getElementById('filterArea');
+  const sf = document.getElementById('filterStatus');
+  const spf = document.getElementById('filterSponsorship');
+  const prf = document.getElementById('filterPrepaid');
+  const qs = document.getElementById('search').value.trim();
+
+  if (kf.value) parts.push('كفيل-' + (allPeople[kf.value]||{}).name);
+  if (pf.value) parts.push('PT-' + (allPeople[pf.value]||{}).name);
+  if (gf.value) parts.push('ولي-' + (allPeople[gf.value]||{}).name);
+  if (cf.value) parts.push(cf.value === 'youssef' ? 'يوسف' : 'نشوى');
+  if (af.value) parts.push(af.value.replace(/_/g,' '));
+  if (caseFilter) parts.push(caseFilter.replace(/_/g,' '));
+
+  const label = parts.join('_') || 'كل_الكفالات';
+
+  // Build CSV rows (one row per funding entry so sponsor-specific export shows only his lines)
+  const rows = [['المنطقة','نوع الحالة','الطفل','تاريخ الميلاد','ولي الأمر','المصدر','الكفيل','PT (المحصّل)','المحصّل','المبلغ','مدفوع مقدماً حتى','ملاحظات','حالة الكفالة','في انتظار كفيل']];
+
+  const filterKafeelId = kf.value;
+  const filterPtId = pf.value;
+  const filterCollector = cf.value;
+
+  lastFilteredItems.forEach(k => {
+    const guardian = personName(allPeople, k.guardian_id);
+    (k.funding||[]).forEach(f => {
+      // Apply per-funding filters so a sponsor-filter exports only his lines
+      if (filterKafeelId && f.kafeel_id !== filterKafeelId) return;
+      if (filterPtId && f.pt_id !== filterPtId) return;
+      if (filterCollector) {
+        const col = collectorFor(f, allPeople);
+        if (col !== filterCollector) return;
+      }
+      const sourceAr = f.source === 'kafeel' ? 'كفيل' :
+                       f.source === 'sadaqat' ? 'صدقات' :
+                       f.source === 'zakat' ? 'زكاة' : f.source;
+      const kafeelName = f.kafeel_id ? personName(allPeople, f.kafeel_id) : '';
+      const ptName = f.pt_id ? personName(allPeople, f.pt_id) : '';
+      const col = collectorFor(f, allPeople);
+      const colAr = col === 'youssef' ? 'يوسف' : col === 'nashwa' ? 'نشوى' : '';
+      const statusAr = k.status==='active' ? 'نشطة' : k.status==='paused' ? 'موقوفة' : 'منتهية';
+      rows.push([
+        areaDisplay(k.area),
+        (k.case_type||'').replace(/_/g,' '),
+        k.child||'',
+        k.child_dob||'',
+        guardian,
+        sourceAr,
+        kafeelName,
+        ptName,
+        colAr,
+        f.amount||0,
+        f.prepaid_through||'',
+        f.notes||'',
+        statusAr,
+        f.awaiting_sponsor ? 'نعم' : ''
+      ]);
+    });
+  });
+
+  // Add a totals row
+  let grandTotal = 0;
+  rows.slice(1).forEach(r => { grandTotal += Number(r[9])||0; });
+  rows.push([]);
+  rows.push(['','','','','','','','','المجموع:', grandTotal, '', '', '', '']);
+
+  // Convert to CSV with UTF-8 BOM so Excel renders Arabic correctly
+  const csv = '﻿' + rows.map(r =>
+    r.map(cell => {
+      const s = String(cell ?? '');
+      if (/[",\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+      return s;
+    }).join(',')
+  ).join('\n');
+
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `kafalat_${label}_${CURRENT_MONTH}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  toast(`تم تصدير ${rows.length - 3} صف`, 'success');
+}
+
+// Helper: who collects this funding entry
+function collectorFor(f, people) {
+  if (f.pt_id) {
+    const pt = people[f.pt_id];
+    return pt?.collector || '';
+  }
+  if (f.kafeel_id) {
+    const kf = people[f.kafeel_id];
+    return kf?.collector || '';
+  }
+  return '';
 }
 
 function renderStats() {
@@ -283,17 +453,44 @@ function render() {
   if (prepaid === 'not_prepaid') items = items.filter(k => !hasAnyPrepaid(k, CURRENT_MONTH));
   if (prepaid === 'partial_prepaid') items = items.filter(k => hasAnyPrepaid(k, CURRENT_MONTH) && !isPrepaidFor(k, CURRENT_MONTH));
 
+  // Sponsorship filter
+  const sp = document.getElementById('filterSponsorship')?.value || '';
+  if (sp === 'awaiting') items = items.filter(k => (k.funding||[]).some(f => f.awaiting_sponsor));
+  if (sp === 'sadaqat_only') items = items.filter(k => (k.funding||[]).every(f => f.source === 'sadaqat'));
+  if (sp === 'has_kafeel') items = items.filter(k => (k.funding||[]).some(f => f.source === 'kafeel'));
+
+  // Kafeel filter
+  const kfId = document.getElementById('filterKafeel')?.value || '';
+  if (kfId) items = items.filter(k => (k.funding||[]).some(f => f.kafeel_id === kfId));
+
+  // PT filter
+  const ptId = document.getElementById('filterPT')?.value || '';
+  if (ptId) items = items.filter(k => (k.funding||[]).some(f => f.pt_id === ptId));
+
+  // Guardian filter
+  const gId = document.getElementById('filterGuardian')?.value || '';
+  if (gId) items = items.filter(k => k.guardian_id === gId);
+
+  // Collector filter (youssef/nashwa) — per-funding, so only show kafalat with at least one matching entry
+  const colFilter = document.getElementById('filterCollector')?.value || '';
+  if (colFilter) items = items.filter(k =>
+    (k.funding||[]).some(f => collectorFor(f, allPeople) === colFilter)
+  );
+
   if (q) {
     const ql = q.toLowerCase();
     items = items.filter(k => {
       const g = personName(allPeople, k.guardian_id);
       const kafeels = (k.funding||[]).map(f => personName(allPeople, f.kafeel_id)).join(' ');
-      return (k.child||'').includes(q) || g.includes(q) || kafeels.includes(q);
+      const pts = (k.funding||[]).map(f => personName(allPeople, f.pt_id)).join(' ');
+      return (k.child||'').includes(q) || g.includes(q) || kafeels.includes(q) || pts.includes(q);
     });
   }
 
   items.sort((a,b) => (a.area||'').localeCompare(b.area||'') ||
     personName(allPeople, a.guardian_id).localeCompare(personName(allPeople, b.guardian_id)));
+
+  lastFilteredItems = items; // cache for export
 
   const body = document.getElementById('kafalatBody');
   body.innerHTML = items.map(k => renderKafalaRow(k)).join('');
@@ -313,10 +510,16 @@ function renderKafalaRow(k) {
     return `<span class="badge">${personName(allPeople, f.kafeel_id)} ${fmt(f.amount)}</span>`;
   }).join(' ');
 
+  const awaitingSponsor = (k.funding||[]).some(f => f.awaiting_sponsor);
   const statusBadge = inactive ? `<span class="badge badge-${k.status}">${k.status==='paused'?'موقوفة':'منتهية'}</span>` :
+    awaitingSponsor ? `<span class="badge" style="background:#fdf7e3;color:#6d4e00">🕒 يبحث عن كفيل</span>` :
     prepaid ? `<span class="badge badge-prepaid">مدفوعة مقدماً</span>` :
     partialPrepaid ? `<span class="badge badge-prepaid">مدفوعة جزئياً</span>` :
     `<span class="badge badge-active">نشطة</span>`;
+
+  const assignBtn = awaitingSponsor
+    ? `<button class="btn-small btn-gold" onclick="event.stopPropagation();openAssignKafeel('${k.id}')">👤 تعيين كفيل</button>`
+    : '';
 
   return `<tr class="kafala-row" style="${inactive?'opacity:0.5':''}" data-id="${k.id}" onclick="toggleExpand('${k.id}')">
     <td><span class="badge">${areaDisplay(k.area)}</span></td>
@@ -326,9 +529,128 @@ function renderKafalaRow(k) {
     <td class="font-mono"><b>${fmt(total)}</b></td>
     <td>${statusBadge}</td>
     <td>
+      ${assignBtn}
       <button class="btn-small btn-ghost" onclick="event.stopPropagation();openEditKafala('${k.id}')">تعديل</button>
     </td>
   </tr>`;
+}
+
+// Quick action: assign a kafeel to a sadaqat-pending kafala
+function openAssignKafeel(kid) {
+  const k = allKafalat[kid];
+  if (!k) return;
+  // Find the sadaqat funding entry that is awaiting a sponsor
+  const pendingFunding = (k.funding||[]).find(f => f.awaiting_sponsor);
+  if (!pendingFunding) return toast('لا توجد مصدر صدقات في انتظار كفيل', 'error');
+
+  modal(`👤 تعيين كفيل لـ: ${k.child}`, `
+    <div style="background:var(--cream-deep);padding:12px;border-radius:8px;margin-bottom:14px;font-size:13px">
+      <b>الحالة الحالية:</b> ${pendingFunding.amount} جنيه من الصدقات (مؤقت)<br>
+      <b>التحويل:</b> الصدقات → كفيل محدد
+    </div>
+    <div class="form-row">
+      <div><label>الكفيل الجديد *</label>
+        <div style="display:flex;gap:4px">
+          ${renderPersonSelect('ak_kafeel', '', 'kafeel')}
+          <button class="btn-small" onclick="quickAddPerson('kafeel', 'ak_kafeel')" style="white-space:nowrap">+ جديد</button>
+        </div>
+      </div>
+      <div><label>المبلغ *</label><input id="ak_amount" type="number" value="${pendingFunding.amount}"></div>
+    </div>
+    <h4 style="margin:14px 0 8px;color:var(--accent)">لمين يدفع؟</h4>
+    <div>
+      <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#fff;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer">
+        <input type="radio" name="ak_collector" value="pt_specific" style="width:auto" onchange="document.getElementById('ak_pt_wrap').style.display=''">
+        <div><div style="font-weight:700;font-size:13px">👥 PT محدد</div></div>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#fff;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer">
+        <input type="radio" name="ak_collector" value="direct_nashwa" style="width:auto" onchange="document.getElementById('ak_pt_wrap').style.display='none'">
+        <div><div style="font-weight:700;font-size:13px">👩 يدفع لنشوى مباشرة</div></div>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#fff;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer">
+        <input type="radio" name="ak_collector" value="direct_youssef" style="width:auto" onchange="document.getElementById('ak_pt_wrap').style.display='none'">
+        <div><div style="font-weight:700;font-size:13px">🧑‍💼 يدفع ليوسف مباشرة</div></div>
+      </label>
+    </div>
+    <div id="ak_pt_wrap" style="display:none;margin-top:10px">
+      <label>اختار PT *</label>
+      <div style="display:flex;gap:4px">
+        ${renderPersonSelect('ak_pt', '', 'pt')}
+        <button class="btn-small" onclick="quickAddPerson('pt', 'ak_pt')" style="white-space:nowrap">+ جديد</button>
+      </div>
+    </div>
+    <div class="form-row single" style="margin-top:10px">
+      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="ak_prepaid" type="month"></div>
+    </div>
+  `, async () => {
+    try {
+      const kafeel_id = document.getElementById('ak_kafeel').value;
+      const amount = parseInt(document.getElementById('ak_amount').value);
+      const collectorChoice = document.querySelector('input[name="ak_collector"]:checked');
+      if (!kafeel_id) return toast('⚠️ اختر الكفيل', 'error');
+      if (!amount || amount <= 0) return toast('⚠️ المبلغ غير صحيح', 'error');
+      if (!collectorChoice) return toast('⚠️ اختر لمين يدفع', 'error');
+
+      // Build new funding entry replacing the pending sadaqat
+      // Note: awaiting_sponsor is intentionally omitted (not set to false)
+      // because Firebase .set() on the array replaces the whole entry,
+      // removing the flag cleanly so filters & collection reflect correctly.
+      const newFunding = {
+        fid: pendingFunding.fid,  // keep same fid for traceability
+        source: 'kafeel',
+        amount,
+        kafeel_id,
+        start_ym: CURRENT_MONTH,  // use working month, not today's calendar month
+        notes: 'تم تحويل من الصدقات المؤقتة إلى كفيل'
+      };
+
+      const choice = collectorChoice.value;
+      if (choice === 'pt_specific') {
+        const pt = document.getElementById('ak_pt').value;
+        if (!pt) return toast('⚠️ اختر PT', 'error');
+        newFunding.pt_id = pt;
+      } else if (choice === 'direct_nashwa') {
+        newFunding.pt_id = kafeel_id;
+        await ensurePtRole(kafeel_id, 'nashwa');
+      } else {
+        newFunding.pt_id = kafeel_id;
+        await ensurePtRole(kafeel_id, 'youssef');
+      }
+
+      const prepaid = document.getElementById('ak_prepaid').value.trim();
+      if (prepaid) newFunding.prepaid_through = prepaid;
+
+      // Replace the funding entry — full-array .set() removes awaiting_sponsor atomically
+      const fullBefore = JSON.parse(JSON.stringify(k.funding || []));
+      const updatedFunding = (k.funding||[]).map(f => f.fid === pendingFunding.fid ? newFunding : f);
+      await ref(`kafalat/${kid}/funding`).set(updatedFunding);
+      await ref(`kafalat/${kid}/updated_at`).set(Date.now());
+
+      // Also clear any month-level record flagged as awaiting for this kafala in current month
+      // (so collection view instantly sees the new kafeel without stale pending state)
+      const monthPaidRef = ref(`months/${CURRENT_MONTH}/paid/${kid}`);
+      const monthPaidSnap = await monthPaidRef.once('value');
+      const monthPaid = monthPaidSnap.val();
+      if (monthPaid && monthPaid[pendingFunding.fid]?.awaiting_sponsor) {
+        // Clear stale awaiting flag at month-level record to keep collection accurate
+        await ref(`months/${CURRENT_MONTH}/paid/${kid}/${pendingFunding.fid}/awaiting_sponsor`).remove();
+      }
+
+      await auditLog('assign_kafeel_from_pending', `kafalat/${kid}/funding`, fullBefore, updatedFunding, {
+        month: CURRENT_MONTH,
+        kafeel_assigned: allPeople[kafeel_id]?.name || kafeel_id,
+        amount,
+        revertable: true, revert_action: 'restore_funding_array', revert_target: kid
+      });
+
+      toast(`✓ تم تعيين ${allPeople[kafeel_id]?.name} — ستظهر في تحصيل ${arabicMonth(CURRENT_MONTH)}`, 'success');
+      closeAllModals();
+      await load();
+    } catch(e) {
+      console.error(e);
+      toast('❌ خطأ: ' + e.message, 'error');
+    }
+  }, {saveLabel: '👤 تعيين الكفيل', wide: true});
 }
 
 function toggleExpand(id) {
@@ -528,7 +850,7 @@ function openEditKafala(kid) {
           <option value="f" ${k.child_gender==='f'?'selected':''}>أنثى</option>
         </select>
       </div>
-      <div><label>تاريخ الميلاد (اختياري)</label><input id="f_dob" type="text" placeholder="YYYY-MM-DD" value="${k.child_dob||''}"></div>
+      <div><label>تاريخ الميلاد (اختياري)</label><input id="f_dob" type="date" value="${k.child_dob||''}"></div>
       <div><label>المرحلة التعليمية (اختياري)</label>
         <select id="f_school">
           ${schoolLevels.map(s => `<option value="${s}" ${k.school_level===s?'selected':''}>${s||'—'}</option>`).join('')}
@@ -723,13 +1045,13 @@ function openNewKafala() {
           <option value="خبز">خبز</option>
         </select>
       </div>
-      <div><label>تاريخ البدء</label><input id="nk_start" placeholder="YYYY-MM" value="${getWorkingMonth()}"></div>
+      <div><label>تاريخ البدء</label><input id="nk_start" type="month" value="${getWorkingMonth()}"></div>
     </div>
     <details style="margin:8px 0 14px">
       <summary style="cursor:pointer;color:var(--muted);font-size:12.5px">+ بيانات إضافية (اختيارية)</summary>
       <div class="form-row three mt-sm">
         <div><label>الجنس</label><select id="nk_gender"><option value="">—</option><option value="m">ذكر</option><option value="f">أنثى</option></select></div>
-        <div><label>تاريخ الميلاد</label><input id="nk_dob" placeholder="YYYY-MM-DD"></div>
+        <div><label>تاريخ الميلاد</label><input id="nk_dob" type="date"></div>
         <div><label>المرحلة التعليمية</label><select id="nk_school">${schoolLevels.map(s=>`<option value="${s}">${s||'—'}</option>`).join('')}</select></div>
       </div>
       <div class="form-row single">
@@ -742,7 +1064,8 @@ function openNewKafala() {
       <div><label>المصدر *</label>
         <select id="nk_src" onchange="toggleNkFunding()">
           <option value="kafeel">👤 كفيل محدد</option>
-          <option value="sadaqat">🤲 صدقات</option>
+          <option value="sadaqat_pending">🕒 صدقات (في انتظار كفيل)</option>
+          <option value="sadaqat">🤲 صدقات دائمة</option>
           <option value="zakat">💰 زكاة</option>
         </select>
       </div>
@@ -753,6 +1076,9 @@ function openNewKafala() {
         </div>
       </div>
       <div><label>المبلغ *</label><input id="nk_amount" type="number" placeholder="500"></div>
+    </div>
+    <div id="nk_pending_note" style="display:none;padding:10px 14px;background:#fdf7e3;border:1px solid var(--warn);border-radius:8px;font-size:12.5px;color:#6d4e00;margin-bottom:10px">
+      🕒 <b>صدقات في انتظار كفيل</b> — الحالة ستُغطّى مؤقتاً من بركة الصدقات لحد ما يظهر كفيل. يمكنك تعيين كفيل لاحقاً من فلتر "يبحث عن كفيل" في الإدارة.
     </div>
 
     <div id="nk_collector_wrap">
@@ -792,7 +1118,7 @@ function openNewKafala() {
         </div>
       </div>
       <div class="form-row single mt-sm">
-        <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="nk_prepaid" placeholder="YYYY-MM"></div>
+        <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="nk_prepaid" type="month"></div>
       </div>
     </div>
 
@@ -810,6 +1136,7 @@ function toggleNkFunding() {
   const src = document.getElementById('nk_src').value;
   document.getElementById('nk_kafeel_wrap').style.display = src === 'kafeel' ? '' : 'none';
   document.getElementById('nk_collector_wrap').style.display = src === 'kafeel' ? '' : 'none';
+  document.getElementById('nk_pending_note').style.display = src === 'sadaqat_pending' ? '' : 'none';
 }
 
 function toggleCollectorChoice() {
@@ -978,13 +1305,18 @@ async function saveNewKafala() {
     return toast('⚠️ الحقول المطلوبة مفقودة: ' + errs.join(', '), 'error');
   }
 
+  // Handle sadaqat_pending — same as sadaqat but with awaiting_sponsor flag
+  const actualSource = (src === 'sadaqat_pending') ? 'sadaqat' : src;
+  const awaitingSponsor = (src === 'sadaqat_pending');
+
   const funding = {
     fid: 'f_' + uid(),
-    source: src,
+    source: actualSource,
     amount: amount,
     start_ym: start_ym || currentMonth(),
     notes: ''
   };
+  if (awaitingSponsor) funding.awaiting_sponsor = true;
 
   if (src === 'kafeel') {
     const kafeel_id = document.getElementById('nk_kafeel').value;
@@ -1100,7 +1432,7 @@ function openAddFunding(kid) {
     </div>
     <div class="form-row">
       <div id="af_pt_wrap"><label>محصّل (PT)</label>${renderPersonSelect('af_pt', '', 'pt')}</div>
-      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="af_prepaid" placeholder="YYYY-MM"></div>
+      <div><label>مدفوع مقدماً حتى (اختياري)</label><input id="af_prepaid" type="month"></div>
     </div>
     <div class="form-row single"><div><label>ملاحظات</label><input id="af_notes"></div></div>
   `, () => saveAddFunding(kid));
@@ -1182,6 +1514,7 @@ function openEditFunding(kid, fid) {
           <option value="amount">تعديل المبلغ</option>
           <option value="taweed">تبديل كفيل (تويد)</option>
           <option value="prepay">دفع مقدم</option>
+          <option value="cancel_to_pending">🕒 الكفيل توقف → نقل للصدقات (في انتظار كفيل)</option>
           <option value="oneoff">زيادة وقتية لشهر واحد</option>
           <option value="remove">حذف هذا المصدر</option>
         </select>
@@ -1205,9 +1538,14 @@ function refreshEfForm(kid, fid) {
       <div><label>الكفيل الجديد</label>${renderPersonSelect('ef_newkafeel', f.kafeel_id, 'kafeel')}</div>
       <div><label>المحصّل (PT) الجديد</label>${renderPersonSelect('ef_newpt', f.pt_id, 'pt')}</div>
     </div>
-    <div class="form-row single"><div><label>تاريخ بدء التبديل</label><input id="ef_startym" value="${currentMonth()}" placeholder="YYYY-MM"></div></div>`;
+    <div class="form-row single"><div><label>تاريخ بدء التبديل</label><input id="ef_startym" type="month" value="${currentMonth()}"></div></div>`;
   } else if (type === 'prepay') {
-    el.innerHTML = `<div class="form-row single"><div><label>مدفوع حتى (YYYY-MM)</label><input id="ef_val" placeholder="2027-01" value="${f.prepaid_through||''}"></div></div>`;
+    el.innerHTML = `<div class="form-row single"><div><label>مدفوع حتى</label><input id="ef_val" type="month" value="${f.prepaid_through||''}"></div></div>`;
+  } else if (type === 'cancel_to_pending') {
+    el.innerHTML = `<div style="padding:14px;background:#fdf7e3;border:1px solid var(--warn);border-radius:8px;color:#6d4e00;font-size:13px">
+      🕒 الكفالة ستتحول من <b>${personName(allPeople, f.kafeel_id)}</b> إلى <b>صدقات (في انتظار كفيل)</b>.<br>
+      ستظهر في فلتر "يبحث عن كفيل" ويمكنك تعيين كفيل جديد لاحقاً بسهولة من زر <b>👤 تعيين كفيل</b>.
+    </div>`;
   } else if (type === 'oneoff') {
     el.innerHTML = `<div class="form-row single"><div><label>مبلغ الزيادة (لـ ${arabicMonth(CURRENT_MONTH)} فقط)</label><input type="number" id="ef_val" placeholder="400"></div></div>`;
   } else if (type === 'remove') {
@@ -1248,6 +1586,18 @@ async function saveEditFunding(kid, fid) {
     editType = 'oneoff';
     after = {amount: v, fid: fid};
     description = `زيادة وقتية +${fmt(v)} (${note||'بدون سبب'})`;
+  } else if (type === 'cancel_to_pending') {
+    // Convert kafeel funding to sadaqat with awaiting_sponsor flag
+    editType = 'funding_update';
+    after = {
+      source: 'sadaqat',
+      kafeel_id: null,
+      pt_id: null,
+      awaiting_sponsor: true,
+      prepaid_through: null,
+      notes: 'الكفيل السابق توقف — في انتظار كفيل جديد'
+    };
+    description = `🕒 الكفيل ${personName(allPeople, f.kafeel_id)} توقف → نقل للصدقات (في انتظار)`;
   } else if (type === 'remove') {
     editType = 'funding_remove';
     description = `حذف مصدر: ${f.source==='kafeel'?personName(allPeople,f.kafeel_id):f.source} (${fmt(f.amount)})`;
