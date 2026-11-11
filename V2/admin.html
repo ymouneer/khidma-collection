@@ -1757,12 +1757,12 @@ function openEditFunding(kid, fid) {
     <div class="form-row">
       <div><label>نوع التعديل</label>
         <select id="ef_type" onchange="refreshEfForm('${kid}','${fid}')">
-          <option value="amount">تعديل المبلغ</option>
-          <option value="taweed">تبديل كفيل (تويد)</option>
-          <option value="prepay">دفع مقدم</option>
+          <option value="amount">💰 تعديل المبلغ</option>
+          <option value="taweed">🔁 تبديل الكفيل (تويد) ← من ${f.source==='kafeel'?personName(allPeople, f.kafeel_id):'المصدر'} لكفيل جديد</option>
+          <option value="prepay">📅 تسجيل دفع مقدم</option>
           <option value="cancel_to_pending">🕒 الكفيل توقف → نقل للصدقات (في انتظار كفيل)</option>
-          <option value="oneoff">زيادة وقتية لشهر واحد</option>
-          <option value="remove">حذف هذا المصدر</option>
+          <option value="oneoff">⚡ زيادة وقتية لشهر واحد</option>
+          <option value="remove">🗑️ حذف هذا المصدر</option>
         </select>
       </div>
       <div><label>سبب التعديل (اختياري)</label><input id="ef_note" placeholder="سبب التغيير..."></div>
